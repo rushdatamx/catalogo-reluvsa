@@ -13,6 +13,8 @@ DATABASE_PATH = os.getenv("DATABASE_PATH", str(Path(__file__).parent.parent / "d
 # En producción, copiar la DB del repo al volume si no existe
 def ensure_database():
     """Asegura que la base de datos exista en el path configurado"""
+    global DATABASE_PATH
+
     db_path = Path(DATABASE_PATH)
     print(f"DATABASE_PATH configurado: {DATABASE_PATH}")
     print(f"DB existe en destino: {db_path.exists()}")
@@ -37,7 +39,6 @@ def ensure_database():
         except Exception as e:
             print(f"Error al copiar base de datos: {e}")
             # Si no se puede copiar al volume, usar la del repo directamente
-            global DATABASE_PATH
             DATABASE_PATH = str(source_db)
             print(f"Usando base de datos del repo: {DATABASE_PATH}")
     else:
