@@ -10,7 +10,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# lib/ - comentado porque frontend/src/lib/ es necesario
 lib64/
 parts/
 sdist/
