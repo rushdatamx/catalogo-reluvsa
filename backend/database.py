@@ -10,7 +10,7 @@ from contextlib import contextmanager
 # Usar variable de entorno para producción o path local para desarrollo
 DATABASE_PATH = os.getenv("DATABASE_PATH", str(Path(__file__).parent.parent / "data" / "catalogo.db"))
 
-# En producción, copiar la DB del repo al volume si no existe
+# En producción, copiar la DB del repo al volume si no existe o está vacía
 def ensure_database():
     """Asegura que la base de datos exista en el path configurado"""
     global DATABASE_PATH
@@ -19,9 +19,11 @@ def ensure_database():
     print(f"DATABASE_PATH configurado: {DATABASE_PATH}")
     print(f"DB existe en destino: {db_path.exists()}")
 
-    # Si la DB ya existe, no hacer nada
-    if db_path.exists():
-        print("Base de datos ya existe, usando existente")
+    # Verificar si la DB existe Y tiene contenido (más de 10KB significa que tiene datos)
+    db_exists_with_data = db_path.exists() and db_path.stat().st_size > 10000
+
+    if db_exists_with_data:
+        print(f"Base de datos ya existe con datos ({db_path.stat().st_size} bytes)")
         return
 
     # Buscar la DB de origen en el repo
@@ -33,9 +35,9 @@ def ensure_database():
         try:
             # Crear directorio destino si no existe
             db_path.parent.mkdir(parents=True, exist_ok=True)
-            # Copiar la base de datos
+            # Copiar la base de datos (sobrescribir si existe vacía)
             shutil.copy2(source_db, db_path)
-            print(f"Base de datos copiada exitosamente de {source_db} a {db_path}")
+            print(f"Base de datos copiada exitosamente de {source_db} a {db_path} ({source_db.stat().st_size} bytes)")
         except Exception as e:
             print(f"Error al copiar base de datos: {e}")
             # Si no se puede copiar al volume, usar la del repo directamente
