@@ -2,12 +2,35 @@
 Módulo de base de datos SQLite para el catálogo de RELUVSA
 """
 import os
+import shutil
 import sqlite3
 from pathlib import Path
 from contextlib import contextmanager
 
 # Usar variable de entorno para producción o path local para desarrollo
 DATABASE_PATH = os.getenv("DATABASE_PATH", str(Path(__file__).parent.parent / "data" / "catalogo.db"))
+
+# En producción, copiar la DB del repo al volume si no existe
+def ensure_database():
+    """Asegura que la base de datos exista en el path configurado"""
+    db_path = Path(DATABASE_PATH)
+
+    # Si la DB ya existe, no hacer nada
+    if db_path.exists():
+        return
+
+    # Buscar la DB de origen en el repo
+    source_db = Path(__file__).parent / "data" / "catalogo.db"
+
+    if source_db.exists():
+        # Crear directorio destino si no existe
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        # Copiar la base de datos
+        shutil.copy2(source_db, db_path)
+        print(f"Base de datos copiada de {source_db} a {db_path}")
+
+# Ejecutar al importar el módulo
+ensure_database()
 
 
 def get_connection():
