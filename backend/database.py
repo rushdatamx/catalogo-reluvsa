@@ -14,20 +14,34 @@ DATABASE_PATH = os.getenv("DATABASE_PATH", str(Path(__file__).parent.parent / "d
 def ensure_database():
     """Asegura que la base de datos exista en el path configurado"""
     db_path = Path(DATABASE_PATH)
+    print(f"DATABASE_PATH configurado: {DATABASE_PATH}")
+    print(f"DB existe en destino: {db_path.exists()}")
 
     # Si la DB ya existe, no hacer nada
     if db_path.exists():
+        print("Base de datos ya existe, usando existente")
         return
 
     # Buscar la DB de origen en el repo
     source_db = Path(__file__).parent / "data" / "catalogo.db"
+    print(f"Buscando DB origen en: {source_db}")
+    print(f"DB origen existe: {source_db.exists()}")
 
     if source_db.exists():
-        # Crear directorio destino si no existe
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        # Copiar la base de datos
-        shutil.copy2(source_db, db_path)
-        print(f"Base de datos copiada de {source_db} a {db_path}")
+        try:
+            # Crear directorio destino si no existe
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            # Copiar la base de datos
+            shutil.copy2(source_db, db_path)
+            print(f"Base de datos copiada exitosamente de {source_db} a {db_path}")
+        except Exception as e:
+            print(f"Error al copiar base de datos: {e}")
+            # Si no se puede copiar al volume, usar la del repo directamente
+            global DATABASE_PATH
+            DATABASE_PATH = str(source_db)
+            print(f"Usando base de datos del repo: {DATABASE_PATH}")
+    else:
+        print("ADVERTENCIA: No se encontró la base de datos origen")
 
 # Ejecutar al importar el módulo
 ensure_database()
