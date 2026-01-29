@@ -13,7 +13,7 @@ from .base import BaseParser, ResultadoParseo
 class ParserSinCompatibilidad(BaseParser):
     """Parser base para productos sin compatibilidad vehicular"""
 
-    def parse(self, descripcion: str) -> ResultadoParseo:
+    def parse(self, descripcion: str, marca_producto: str = '', departamento: str = '') -> ResultadoParseo:
         """Parsea sin extraer compatibilidades"""
         resultado = ResultadoParseo()
 
@@ -22,7 +22,7 @@ class ParserSinCompatibilidad(BaseParser):
 
         resultado.skus_alternos = self.extraer_skus_alternos(descripcion)
         resultado.tipo_producto = self.extraer_tipo_producto(descripcion)
-        resultado.nombre_producto = descripcion[:100] if len(descripcion) > 100 else descripcion
+        resultado.nombre_producto = self.limpiar_nombre_producto(descripcion, marca_producto, departamento)
         resultado.compatibilidades = []  # Sin compatibilidades
         resultado.raw_compatibilidades = descripcion
 

@@ -150,6 +150,42 @@ def init_database():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_caracteristicas_categoria ON caracteristicas_producto(categoria)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_caracteristicas_clave_valor ON caracteristicas_producto(clave, valor)")
 
+        # Tabla de especificaciones manuales (editables por usuario)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS especificaciones_manuales (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                producto_id INTEGER NOT NULL,
+                tipo TEXT NOT NULL,
+                valor TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (producto_id) REFERENCES productos(id) ON DELETE CASCADE,
+                UNIQUE(producto_id, tipo)
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_especs_manuales_producto ON especificaciones_manuales(producto_id)")
+
+        # Tabla de productos intercambiables (precalculada)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS productos_intercambiables (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                producto_id INTEGER NOT NULL,
+                producto_intercambiable_id INTEGER NOT NULL,
+                sku_comun TEXT,
+                FOREIGN KEY (producto_id) REFERENCES productos(id) ON DELETE CASCADE,
+                FOREIGN KEY (producto_intercambiable_id) REFERENCES productos(id) ON DELETE CASCADE,
+                UNIQUE(producto_id, producto_intercambiable_id)
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_intercambiables_producto ON productos_intercambiables(producto_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_intercambiables_inverso ON productos_intercambiables(producto_intercambiable_id)")
+
+        # Columna grupo_producto (ALTER TABLE idempotente)
+        try:
+            cursor.execute("ALTER TABLE productos ADD COLUMN grupo_producto TEXT")
+        except Exception:
+            pass  # columna ya existe
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_productos_grupo ON productos(grupo_producto)")
+
         print("Base de datos inicializada correctamente")
 
 

@@ -55,3 +55,15 @@ class PaginatedResponse(BaseModel):
 class FiltroOpciones(BaseModel):
     valores: List[str]
     total: int
+
+
+class EspecificacionesManuales(BaseModel):
+    garantia: Optional[str] = None
+    material: Optional[str] = None
+    posicion: Optional[str] = None
+
+
+class EspecificacionesManualRequest(BaseModel):
+    garantia: Optional[str] = None
+    material: Optional[str] = None
+    posicion: Optional[str] = None

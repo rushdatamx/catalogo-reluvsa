@@ -193,6 +193,61 @@ def get_motores(
         return FiltroOpciones(valores=valores, total=len(valores))
 
 
+@router.get("/grupos-producto", response_model=FiltroOpciones)
+def get_grupos_producto(
+    departamento: Optional[str] = Query(None),
+    marca_producto: Optional[str] = Query(None),
+    marca_vehiculo: Optional[str] = Query(None),
+    modelo_vehiculo: Optional[str] = Query(None),
+    año: Optional[int] = Query(None),
+    motor: Optional[str] = Query(None)
+):
+    """Obtiene la lista de grupos de producto con filtros en cascada"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+
+        needs_compat = any([marca_vehiculo, modelo_vehiculo, año, motor])
+
+        query = """
+            SELECT DISTINCT p.grupo_producto
+            FROM productos p
+        """
+        if needs_compat:
+            query += " INNER JOIN compatibilidades c ON c.producto_id = p.id"
+
+        query += " WHERE p.grupo_producto IS NOT NULL AND p.grupo_producto != ''"
+        params = []
+
+        if departamento:
+            query += " AND p.departamento = ?"
+            params.append(departamento)
+
+        if marca_producto:
+            query += " AND p.marca = ?"
+            params.append(marca_producto)
+
+        if marca_vehiculo:
+            query += " AND c.marca_vehiculo = ?"
+            params.append(marca_vehiculo)
+
+        if modelo_vehiculo:
+            query += " AND c.modelo_vehiculo = ?"
+            params.append(modelo_vehiculo)
+
+        if año:
+            query += " AND c.año_inicio <= ? AND c.año_fin >= ?"
+            params.extend([año, año])
+
+        if motor:
+            query += " AND c.motor = ?"
+            params.append(motor)
+
+        query += " ORDER BY p.grupo_producto"
+        cursor.execute(query, params)
+        valores = [row['grupo_producto'] for row in cursor.fetchall()]
+        return FiltroOpciones(valores=valores, total=len(valores))
+
+
 @router.get("/tipos-producto", response_model=FiltroOpciones)
 def get_tipos_producto(
     departamento: Optional[str] = Query(None)

@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from database import get_db
-from models import ProductoLista, ProductoDetalle, PaginatedResponse, Compatibilidad, InventarioSucursal
+from models import ProductoLista, ProductoDetalle, PaginatedResponse, Compatibilidad, InventarioSucursal, EspecificacionesManualRequest, EspecificacionesManuales
 
 router = APIRouter(prefix="/api/productos", tags=["productos"])
 
@@ -26,6 +26,7 @@ def listar_productos(
     año: Optional[int] = Query(None),
     motor: Optional[str] = Query(None),
     tipo_producto: Optional[str] = Query(None),
+    grupo_producto: Optional[str] = Query(None, description="Grupo del producto"),
     con_inventario: Optional[bool] = Query(None, description="Solo productos con inventario"),
     # Filtros para LLANTAS
     ancho_llanta: Optional[str] = Query(None, description="Ancho de llanta (mm)"),
@@ -88,6 +89,10 @@ def listar_productos(
         if tipo_producto:
             where_clauses.append("p.tipo_producto = ?")
             params.append(tipo_producto)
+
+        if grupo_producto:
+            where_clauses.append("p.grupo_producto = ?")
+            params.append(grupo_producto)
 
         if con_inventario:
             where_clauses.append("p.inventario_total > 0")
@@ -336,7 +341,60 @@ def buscar_productos(
         return {'results': results, 'total': len(results)}
 
 
-@router.get("/{sku:path}", response_model=ProductoDetalle)
+@router.put("/{sku}/especificaciones-manuales")
+def actualizar_especificaciones_manuales(sku: str, datos: EspecificacionesManualRequest):
+    """Crea o actualiza especificaciones manuales de un producto"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+
+        # Buscar producto_id por SKU
+        cursor.execute("SELECT id FROM productos WHERE sku = ?", [sku])
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        producto_id = row['id']
+
+        # Procesar cada especificación
+        especificaciones = [
+            ('garantia', datos.garantia),
+            ('material', datos.material),
+            ('posicion', datos.posicion)
+        ]
+
+        for tipo, valor in especificaciones:
+            if valor and valor.strip():
+                # INSERT OR REPLACE
+                cursor.execute("""
+                    INSERT OR REPLACE INTO especificaciones_manuales (producto_id, tipo, valor, updated_at)
+                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                """, [producto_id, tipo, valor.strip()])
+            else:
+                # DELETE si está vacío
+                cursor.execute("""
+                    DELETE FROM especificaciones_manuales
+                    WHERE producto_id = ? AND tipo = ?
+                """, [producto_id, tipo])
+
+        # Retornar especificaciones actualizadas
+        cursor.execute("""
+            SELECT tipo, valor FROM especificaciones_manuales
+            WHERE producto_id = ?
+        """, [producto_id])
+
+        result = {row['tipo']: row['valor'] for row in cursor.fetchall()}
+
+        return {
+            "success": True,
+            "especificaciones_manuales": {
+                "garantia": result.get('garantia'),
+                "material": result.get('material'),
+                "posicion": result.get('posicion')
+            }
+        }
+
+
+@router.get("/{sku:path}")
 def get_producto(sku: str):
     """Obtiene el detalle de un producto por SKU"""
     with get_db() as conn:
@@ -396,19 +454,55 @@ def get_producto(sku: str):
                 cantidad=i_row['cantidad']
             ))
 
-        return ProductoDetalle(
-            id=row['id'],
-            sku=row['sku'],
-            departamento=row['departamento'],
-            marca=row['marca'],
-            descripcion_original=row['descripcion_original'],
-            nombre_producto=row['nombre_producto'],
-            tipo_producto=row['tipo_producto'],
-            precio_publico=row['precio_publico'],
-            precio_mayoreo=row['precio_mayoreo'],
-            imagen_url=row['imagen_url'],
-            inventario_total=row['inventario_total'],
-            skus_alternos=skus_alternos,
-            compatibilidades=compatibilidades,
-            inventario_sucursales=inventario_sucursales
-        )
+        # Obtener especificaciones manuales
+        cursor.execute("""
+            SELECT tipo, valor FROM especificaciones_manuales
+            WHERE producto_id = ?
+        """, [row['id']])
+
+        especs_dict = {e_row['tipo']: e_row['valor'] for e_row in cursor.fetchall()}
+        especificaciones_manuales = {
+            "garantia": especs_dict.get('garantia'),
+            "material": especs_dict.get('material'),
+            "posicion": especs_dict.get('posicion')
+        }
+
+        # Obtener productos intercambiables
+        intercambiables = []
+        try:
+            cursor.execute("""
+                SELECT p.sku, p.nombre_producto, p.marca, p.inventario_total
+                FROM productos_intercambiables pi
+                INNER JOIN productos p ON p.id = pi.producto_intercambiable_id
+                WHERE pi.producto_id = ?
+                ORDER BY p.marca, p.nombre_producto
+            """, [row['id']])
+
+            for i_row in cursor.fetchall():
+                intercambiables.append({
+                    'sku': i_row['sku'],
+                    'nombre_producto': i_row['nombre_producto'],
+                    'marca': i_row['marca'],
+                    'inventario_total': i_row['inventario_total']
+                })
+        except Exception:
+            pass  # Tabla puede no existir aun
+
+        return {
+            "id": row['id'],
+            "sku": row['sku'],
+            "departamento": row['departamento'],
+            "marca": row['marca'],
+            "descripcion_original": row['descripcion_original'],
+            "nombre_producto": row['nombre_producto'],
+            "tipo_producto": row['tipo_producto'],
+            "precio_publico": row['precio_publico'],
+            "precio_mayoreo": row['precio_mayoreo'],
+            "imagen_url": row['imagen_url'],
+            "inventario_total": row['inventario_total'],
+            "skus_alternos": skus_alternos,
+            "compatibilidades": [c.model_dump() for c in compatibilidades],
+            "inventario_sucursales": [i.model_dump() for i in inventario_sucursales],
+            "especificaciones_manuales": especificaciones_manuales,
+            "intercambiables": intercambiables
+        }

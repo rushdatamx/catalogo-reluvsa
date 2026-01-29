@@ -86,6 +86,7 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
     gruposBci: [],
     capacidadesCca: [],
     tamanosAcumulador: [],
+    gruposProducto: [],
   });
 
   const [loading, setLoading] = useState({});
@@ -177,6 +178,22 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
       .catch(console.error)
       .finally(() => setLoading(prev => ({ ...prev, motores: false })));
   }, [filtros.marca_vehiculo, filtros.modelo_vehiculo, filtros.año]);
+
+  // Cargar grupos de producto
+  useEffect(() => {
+    setLoading(prev => ({ ...prev, gruposProducto: true }));
+    getFiltros.gruposProducto({
+      departamento: filtros.departamento || undefined,
+      marca_producto: filtros.marca || undefined,
+      marca_vehiculo: filtros.marca_vehiculo || undefined,
+      modelo_vehiculo: filtros.modelo_vehiculo || undefined,
+      año: filtros.año || undefined,
+      motor: filtros.motor || undefined,
+    })
+      .then(res => setOpciones(prev => ({ ...prev, gruposProducto: res.data.valores })))
+      .catch(console.error)
+      .finally(() => setLoading(prev => ({ ...prev, gruposProducto: false })));
+  }, [filtros.departamento, filtros.marca, filtros.marca_vehiculo, filtros.modelo_vehiculo, filtros.año, filtros.motor]);
 
   // ========== FILTROS PARA LLANTAS ==========
   useEffect(() => {
@@ -316,6 +333,7 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
       newFiltros.modelo_vehiculo = '';
       newFiltros.año = '';
       newFiltros.motor = '';
+      newFiltros.grupo_producto = '';
       newFiltros.ancho_llanta = '';
       newFiltros.relacion_llanta = '';
       newFiltros.diametro_llanta = '';
@@ -373,6 +391,7 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
     onFiltrosChange({
       departamento: '',
       marca: '',
+      grupo_producto: '',
       marca_vehiculo: '',
       modelo_vehiculo: '',
       año: '',
@@ -472,6 +491,16 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
             options={opciones.motores}
             disabled={!filtros.marca_vehiculo || loading.motores}
             placeholder="Todos los motores"
+          />
+
+          <SelectField
+            label="Grupo de Producto"
+            icon={Package}
+            value={filtros.grupo_producto}
+            onChange={(v) => handleChange('grupo_producto', v)}
+            options={opciones.gruposProducto}
+            disabled={loading.gruposProducto}
+            placeholder="Todos los grupos"
           />
         </FilterSection>
       )}
@@ -588,6 +617,12 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
       {/* Filtro de inventario */}
       <div className="border-t border-notion-border pt-4 mt-4">
         <label className="flex items-center gap-3 cursor-pointer group">
+          <input
+            type="checkbox"
+            checked={filtros.con_inventario || false}
+            onChange={(e) => handleChange('con_inventario', e.target.checked)}
+            className="hidden"
+          />
           <div className={cn(
             "w-5 h-5 rounded border-2 flex items-center justify-center transition-all",
             filtros.con_inventario
@@ -601,12 +636,6 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
             Solo con inventario
           </span>
         </label>
-        <input
-          type="checkbox"
-          checked={filtros.con_inventario || false}
-          onChange={(e) => handleChange('con_inventario', e.target.checked)}
-          className="hidden"
-        />
       </div>
     </div>
   );

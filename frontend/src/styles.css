@@ -248,8 +248,9 @@ body {
 
 .product-sku {
   font-size: 0.8rem;
-  color: #718096;
+  color: #E31E24;
   font-family: monospace;
+  font-weight: 600;
 }
 
 .product-brand {
@@ -485,6 +486,72 @@ body {
 
 .compat-item strong {
   color: #1a365d;
+}
+
+/* Productos Intercambiables */
+.intercambiables-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.intercambiable-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #f7fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.intercambiable-item:hover {
+  background: #ebf4ff;
+  border-color: #90cdf4;
+  transform: translateX(4px);
+}
+
+.intercambiable-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.intercambiable-marca {
+  background: #1a365d;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.intercambiable-nombre {
+  font-size: 0.9rem;
+  color: #2d3748;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.intercambiable-stock {
+  font-size: 0.8rem;
+  font-weight: 500;
+  white-space: nowrap;
+  margin-left: 12px;
+}
+
+.intercambiable-stock.en-stock {
+  color: #2f855a;
+}
+
+.intercambiable-stock.sin-stock {
+  color: #a0aec0;
 }
 
 /* Responsive */

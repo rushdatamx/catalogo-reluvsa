@@ -17,6 +17,7 @@ export const getFiltros = {
   años: (params) => api.get('/filtros/años', { params }),
   motores: (params) => api.get('/filtros/motores', { params }),
   tiposProducto: (params) => api.get('/filtros/tipos-producto', { params }),
+  gruposProducto: (params) => api.get('/filtros/grupos-producto', { params }),
 
   // Filtros para LLANTAS
   anchosLlanta: (params) => api.get('/filtros/llantas/anchos', { params }),
@@ -40,6 +41,10 @@ export const getFiltros = {
 export const getProductos = (params) => api.get('/productos', { params });
 export const getProducto = (sku) => api.get(`/productos/${encodeURIComponent(sku)}`);
 export const buscarProductos = (q, limit = 20) => api.get('/productos/buscar', { params: { q, limit } });
+
+// Especificaciones manuales
+export const actualizarEspecificacionesManuales = (sku, datos) =>
+  api.put(`/productos/${encodeURIComponent(sku)}/especificaciones-manuales`, datos);
 
 // Stats
 export const getStats = () => api.get('/stats');

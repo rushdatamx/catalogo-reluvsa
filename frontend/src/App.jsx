@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, Package, Car, Link2, Filter, X, ChevronDown, CheckCircle, XCircle, AlertCircle, Tag, Calendar, Gauge, Truck } from 'lucide-react';
-import { getProductos, getStats, getProducto } from './services/api';
+import { Search, Package, Car, Link2, Filter, X, ChevronDown, CheckCircle, XCircle, AlertCircle, Tag, Calendar, Gauge, Truck, Settings, Save } from 'lucide-react';
+import { getProductos, getStats, getProducto, actualizarEspecificacionesManuales } from './services/api';
 import { cn } from './lib/utils';
 
 // Componentes de Filtros
@@ -10,6 +10,7 @@ function App() {
   const [filtros, setFiltros] = useState({
     departamento: '',
     marca: '',
+    grupo_producto: '',
     marca_vehiculo: '',
     modelo_vehiculo: '',
     año: '',
@@ -42,6 +43,15 @@ function App() {
   const [detalleProducto, setDetalleProducto] = useState(null);
   const [loadingDetalle, setLoadingDetalle] = useState(false);
   const [stats, setStats] = useState(null);
+
+  // Estados para especificaciones manuales
+  const [especsManuales, setEspecsManuales] = useState({
+    garantia: '',
+    material: '',
+    posicion: ''
+  });
+  const [guardandoEspecs, setGuardandoEspecs] = useState(false);
+  const [especsGuardadas, setEspecsGuardadas] = useState(false);
 
   // Cargar estadísticas
   useEffect(() => {
@@ -91,14 +101,44 @@ function App() {
   useEffect(() => {
     if (productoSeleccionado) {
       setLoadingDetalle(true);
+      setEspecsGuardadas(false);
       getProducto(productoSeleccionado)
-        .then(res => setDetalleProducto(res.data))
+        .then(res => {
+          setDetalleProducto(res.data);
+          // Cargar especificaciones manuales existentes
+          if (res.data.especificaciones_manuales) {
+            setEspecsManuales({
+              garantia: res.data.especificaciones_manuales.garantia || '',
+              material: res.data.especificaciones_manuales.material || '',
+              posicion: res.data.especificaciones_manuales.posicion || ''
+            });
+          } else {
+            setEspecsManuales({ garantia: '', material: '', posicion: '' });
+          }
+        })
         .catch(console.error)
         .finally(() => setLoadingDetalle(false));
     } else {
       setDetalleProducto(null);
+      setEspecsManuales({ garantia: '', material: '', posicion: '' });
     }
   }, [productoSeleccionado]);
+
+  // Guardar especificaciones manuales
+  const handleGuardarEspecs = async () => {
+    setGuardandoEspecs(true);
+    setEspecsGuardadas(false);
+    try {
+      await actualizarEspecificacionesManuales(productoSeleccionado, especsManuales);
+      setEspecsGuardadas(true);
+      setTimeout(() => setEspecsGuardadas(false), 3000);
+    } catch (err) {
+      console.error('Error guardando especificaciones:', err);
+      alert('Error al guardar las especificaciones');
+    } finally {
+      setGuardandoEspecs(false);
+    }
+  };
 
   const handleFiltrosChange = (nuevosFiltros) => {
     setFiltros(nuevosFiltros);
@@ -203,7 +243,7 @@ function App() {
                   >
                     {/* Header */}
                     <div className="flex items-start justify-between mb-2">
-                      <code className="text-xs text-notion-text-secondary font-mono">
+                      <code className="text-xs text-reluvsa-red font-mono font-semibold">
                         {producto.sku}
                       </code>
                       <span className="text-xs bg-notion-bg-subtle px-2 py-0.5 rounded font-medium text-notion-text-secondary">
@@ -306,7 +346,7 @@ function App() {
                 {/* Header del Modal */}
                 <div className="sticky top-0 bg-white border-b border-notion-border p-6 flex items-start justify-between">
                   <div>
-                    <code className="text-sm text-notion-text-secondary font-mono">
+                    <code className="text-sm text-reluvsa-red font-mono font-semibold">
                       {detalleProducto.sku}
                     </code>
                     <h2 className="text-xl font-semibold text-notion-text-primary mt-1">
@@ -390,7 +430,9 @@ function App() {
                               {compat.marca_vehiculo} {compat.modelo_vehiculo}
                             </span>
                             <span className="text-notion-text-secondary ml-2">
-                              {compat.año_inicio}-{compat.año_fin}
+                              {compat.año_inicio && compat.año_fin
+                                ? `${compat.año_inicio}-${compat.año_fin}`
+                                : 'Todos los años'}
                               {compat.motor && ` · ${compat.motor}`}
                             </span>
                           </div>
@@ -398,6 +440,112 @@ function App() {
                       </div>
                     </div>
                   )}
+
+                  {/* Productos Intercambiables */}
+                  {detalleProducto.intercambiables?.length > 0 && (
+                    <div>
+                      <h3 className="flex items-center gap-2 font-semibold text-notion-text-primary mb-3">
+                        <Link2 size={18} />
+                        Productos Intercambiables ({detalleProducto.intercambiables.length})
+                      </h3>
+                      <div className="space-y-2">
+                        {detalleProducto.intercambiables.map((item, i) => (
+                          <div
+                            key={i}
+                            onClick={() => setProductoSeleccionado(item.sku)}
+                            className="flex items-center justify-between bg-notion-bg-subtle p-3 rounded-lg cursor-pointer hover:bg-blue-50 hover:border-blue-200 border border-transparent transition-all"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <span className="bg-reluvsa-black text-white text-xs font-semibold px-2 py-0.5 rounded whitespace-nowrap">
+                                {item.marca}
+                              </span>
+                              <span className="text-sm text-notion-text-primary truncate">
+                                {item.nombre_producto || item.sku}
+                              </span>
+                            </div>
+                            <span className={cn(
+                              "text-xs font-medium whitespace-nowrap ml-3",
+                              item.inventario_total > 0 ? "text-success" : "text-notion-text-secondary"
+                            )}>
+                              {item.inventario_total > 0 ? `${item.inventario_total} en stock` : 'Sin stock'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Especificaciones Manuales */}
+                  <div>
+                    <h3 className="flex items-center gap-2 font-semibold text-notion-text-primary mb-3">
+                      <Settings size={18} />
+                      Especificaciones Manuales
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {/* Campo Garantía */}
+                      <div className="bg-notion-bg-subtle p-3 rounded-lg">
+                        <label className="text-xs text-notion-text-secondary mb-1 block">Garantía</label>
+                        <input
+                          type="text"
+                          value={especsManuales.garantia}
+                          onChange={(e) => setEspecsManuales({...especsManuales, garantia: e.target.value})}
+                          placeholder="Ej: 1 año"
+                          className="w-full px-2 py-1.5 border border-notion-border rounded text-sm focus:outline-none focus:border-reluvsa-yellow"
+                        />
+                      </div>
+                      {/* Campo Material */}
+                      <div className="bg-notion-bg-subtle p-3 rounded-lg">
+                        <label className="text-xs text-notion-text-secondary mb-1 block">Material</label>
+                        <input
+                          type="text"
+                          value={especsManuales.material}
+                          onChange={(e) => setEspecsManuales({...especsManuales, material: e.target.value})}
+                          placeholder="Ej: Acero inoxidable"
+                          className="w-full px-2 py-1.5 border border-notion-border rounded text-sm focus:outline-none focus:border-reluvsa-yellow"
+                        />
+                      </div>
+                      {/* Campo Posición */}
+                      <div className="bg-notion-bg-subtle p-3 rounded-lg">
+                        <label className="text-xs text-notion-text-secondary mb-1 block">Posición</label>
+                        <input
+                          type="text"
+                          value={especsManuales.posicion}
+                          onChange={(e) => setEspecsManuales({...especsManuales, posicion: e.target.value})}
+                          placeholder="Ej: Delantera izquierda"
+                          className="w-full px-2 py-1.5 border border-notion-border rounded text-sm focus:outline-none focus:border-reluvsa-yellow"
+                        />
+                      </div>
+                    </div>
+                    {/* Botón Guardar */}
+                    <button
+                      onClick={handleGuardarEspecs}
+                      disabled={guardandoEspecs}
+                      className={cn(
+                        "mt-3 flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
+                        especsGuardadas
+                          ? "bg-success text-white"
+                          : "bg-reluvsa-yellow text-reluvsa-black hover:bg-yellow-400",
+                        "disabled:opacity-50 disabled:cursor-not-allowed"
+                      )}
+                    >
+                      {guardandoEspecs ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-reluvsa-black border-t-transparent rounded-full animate-spin"></div>
+                          Guardando...
+                        </>
+                      ) : especsGuardadas ? (
+                        <>
+                          <CheckCircle size={16} />
+                          Guardado
+                        </>
+                      ) : (
+                        <>
+                          <Save size={16} />
+                          Guardar Especificaciones
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </>
             ) : (

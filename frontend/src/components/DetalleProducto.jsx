@@ -5,18 +5,23 @@ function DetalleProducto({ sku, onClose }) {
   const [producto, setProducto] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [currentSku, setCurrentSku] = useState(sku);
 
   useEffect(() => {
-    if (!sku) return;
+    setCurrentSku(sku);
+  }, [sku]);
+
+  useEffect(() => {
+    if (!currentSku) return;
 
     setLoading(true);
     setError(null);
 
-    getProducto(sku)
+    getProducto(currentSku)
       .then(res => setProducto(res.data))
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
-  }, [sku]);
+  }, [currentSku]);
 
   const formatPrice = (price) => {
     if (!price) return '-';
@@ -122,6 +127,32 @@ function DetalleProducto({ sku, onClose }) {
                 </div>
               )}
 
+              {/* Productos Intercambiables */}
+              {producto.intercambiables && producto.intercambiables.length > 0 && (
+                <div className="detail-section">
+                  <h3>🔄 Productos Intercambiables ({producto.intercambiables.length})</h3>
+                  <div className="intercambiables-list">
+                    {producto.intercambiables.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className="intercambiable-item"
+                        onClick={() => setCurrentSku(item.sku)}
+                      >
+                        <div className="intercambiable-info">
+                          <span className="intercambiable-marca">{item.marca}</span>
+                          <span className="intercambiable-nombre">
+                            {item.nombre_producto || item.sku}
+                          </span>
+                        </div>
+                        <span className={`intercambiable-stock ${item.inventario_total > 0 ? 'en-stock' : 'sin-stock'}`}>
+                          {item.inventario_total > 0 ? `${item.inventario_total} en stock` : 'Sin stock'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Compatibilidades */}
               {producto.compatibilidades && producto.compatibilidades.length > 0 && (
                 <div className="detail-section">
@@ -133,9 +164,11 @@ function DetalleProducto({ sku, onClose }) {
                           {c.marca_vehiculo || ''} {c.modelo_vehiculo || ''}
                         </strong>
                         {' '}
-                        {c.año_inicio && c.año_fin && (
-                          <span>({c.año_inicio} - {c.año_fin})</span>
-                        )}
+                        <span>
+                          ({c.año_inicio && c.año_fin
+                            ? `${c.año_inicio} - ${c.año_fin}`
+                            : 'Todos los años'})
+                        </span>
                         {c.motor && <span> • Motor: {c.motor}</span>}
                         {c.cilindros && <span> • {c.cilindros}</span>}
                         {c.especificacion && <span> • {c.especificacion}</span>}
