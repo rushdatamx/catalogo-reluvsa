@@ -10,41 +10,51 @@ from contextlib import contextmanager
 # Usar variable de entorno para producción o path local para desarrollo
 DATABASE_PATH = os.getenv("DATABASE_PATH", str(Path(__file__).parent.parent / "data" / "catalogo.db"))
 
-# En producción, copiar la DB del repo al volume si no existe o está vacía
+# En producción, copiar la DB del repo al volume si no existe, está vacía, o es más pequeña
 def ensure_database():
-    """Asegura que la base de datos exista en el path configurado"""
+    """Asegura que la base de datos exista en el path configurado y esté actualizada"""
     global DATABASE_PATH
 
     db_path = Path(DATABASE_PATH)
     print(f"DATABASE_PATH configurado: {DATABASE_PATH}")
     print(f"DB existe en destino: {db_path.exists()}")
 
-    # Verificar si la DB existe Y tiene contenido (más de 10KB significa que tiene datos)
-    db_exists_with_data = db_path.exists() and db_path.stat().st_size > 10000
-
-    if db_exists_with_data:
-        print(f"Base de datos ya existe con datos ({db_path.stat().st_size} bytes)")
-        return
-
     # Buscar la DB de origen en el repo
     source_db = Path(__file__).parent / "data" / "catalogo.db"
     print(f"Buscando DB origen en: {source_db}")
     print(f"DB origen existe: {source_db.exists()}")
 
-    if source_db.exists():
+    if not source_db.exists():
+        print("ADVERTENCIA: No se encontró la base de datos origen")
+        return
+
+    source_size = source_db.stat().st_size
+    dest_size = db_path.stat().st_size if db_path.exists() else 0
+
+    print(f"Tamaño DB origen: {source_size} bytes")
+    print(f"Tamaño DB destino: {dest_size} bytes")
+
+    # Copiar si: no existe destino, destino vacío (<10KB), o origen es más grande
+    should_copy = (
+        not db_path.exists() or
+        dest_size < 10000 or
+        source_size > dest_size
+    )
+
+    if should_copy:
         try:
             # Crear directorio destino si no existe
             db_path.parent.mkdir(parents=True, exist_ok=True)
-            # Copiar la base de datos (sobrescribir si existe vacía)
+            # Copiar la base de datos
             shutil.copy2(source_db, db_path)
-            print(f"Base de datos copiada exitosamente de {source_db} a {db_path} ({source_db.stat().st_size} bytes)")
+            print(f"Base de datos copiada/actualizada: {source_db} -> {db_path} ({source_size} bytes)")
         except Exception as e:
             print(f"Error al copiar base de datos: {e}")
             # Si no se puede copiar al volume, usar la del repo directamente
             DATABASE_PATH = str(source_db)
             print(f"Usando base de datos del repo: {DATABASE_PATH}")
     else:
-        print("ADVERTENCIA: No se encontró la base de datos origen")
+        print(f"Base de datos destino ya está actualizada ({dest_size} bytes)")
 
 # Ejecutar al importar el módulo
 ensure_database()
