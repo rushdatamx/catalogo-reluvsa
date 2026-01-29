@@ -42,6 +42,7 @@ class ProductoDetalle(ProductoBase):
 
 class ProductoLista(ProductoBase):
     id: int
+    es_nuevo: bool = False
 
 
 class PaginatedResponse(BaseModel):

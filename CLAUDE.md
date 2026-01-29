@@ -350,6 +350,94 @@ python3 scripts/validar_100_porciento.py
 python3 scripts/validar_nombres.py
 ```
 
+## Actualización Incremental de Inventario
+
+### Proceso Completo
+
+Cuando llegue un nuevo CSV de inventario, seguir estos pasos:
+
+#### 1. Preparar el CSV
+
+El archivo debe tener **16 columnas** en este formato:
+
+| # | Columna | Uso |
+|---|---------|-----|
+| 0 | Clave | SKU del producto |
+| 1 | Grupo -> Nombre | grupo_producto |
+| 2 | Codigo de Barras | (ignorado) |
+| 3 | Departamento -> Nombre | departamento |
+| 4 | Marcas Prodcuto -> Nombre | marca |
+| 5 | Descripcion | descripcion_original |
+| 6 | Precio Publico | precio_publico |
+| 7 | Precio Mayoreo | precio_mayoreo |
+| 8 | Variant Scr | imagen_url |
+| 9-14 | Sucursales | inventario por sucursal |
+| 15 | Total Almacenes | inventario_total |
+
+**IMPORTANTE**: Exportar el CSV con la columna SKU como **TEXTO**, no como número. Si Excel convierte los SKUs a notación científica (1.23E+11), los datos se corrompen.
+
+#### 2. Subir el CSV
+
+Colocar el archivo en `data/nuevo_inventario.csv`
+
+#### 3. Hacer Backup
+
+```bash
+cd backend
+cp ../data/catalogo.db ../data/catalogo_backup_$(date +%Y%m%d).db
+```
+
+#### 4. Ejecutar Actualización
+
+```bash
+python3 scripts/actualizar_inventario.py ../data/nuevo_inventario.csv
+```
+
+**Output esperado:**
+```
+============================================================
+RESUMEN DE ACTUALIZACIÓN
+============================================================
+✓ Productos actualizados:    35,286
+✓ Productos NUEVOS:          310
+✓ Productos con inv. → 0:    163
+✗ Errores:                   0
+============================================================
+```
+
+#### 5. Ejecutar Extractores (si hay productos nuevos)
+
+```bash
+# Extraer compatibilidades vehiculares
+python3 scripts/extraer_compatibilidades.py
+
+# Extraer características (llantas, aceites, acumuladores)
+python3 scripts/extraer_caracteristicas.py
+
+# Recalcular productos intercambiables
+python3 scripts/calcular_intercambiables.py
+```
+
+### Comportamiento del Script
+
+| Caso | Acción |
+|------|--------|
+| SKU existe en DB y CSV | UPDATE precios, inventario, grupo |
+| SKU solo en CSV (nuevo) | INSERT con `created_at = NOW()` |
+| SKU solo en DB (no en CSV) | `inventario_total = 0` |
+
+**Notas:**
+- Los SKUs se normalizan (se quitan ceros iniciales en numéricos) para hacer match correcto
+- Los productos nuevos aparecen con badge "NUEVO" por 60 días
+- No se borran productos existentes, solo se pone inventario en 0
+- Se preservan compatibilidades, características e intercambiables
+
+### Badge "Nuevo" en Frontend
+
+- Productos con `created_at` en los últimos **60 días** muestran badge "NUEVO"
+- Checkbox "Solo productos nuevos" filtra estos productos
+- El badge es una cinta diagonal rosa/coral en la esquina superior derecha
+
 ## Parsers de Marcas
 
 ### Estructura Base (backend/parsers/base.py)

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Filter, Truck, Tag, Car, Calendar, Gauge, Circle, ChevronDown, X, Package, Droplet, Battery, Check } from 'lucide-react';
+import { Filter, Truck, Tag, Car, Calendar, Gauge, Circle, ChevronDown, X, Package, Droplet, Battery, Check, Sparkles } from 'lucide-react';
 import { getFiltros } from '../services/api';
 import { cn } from '../lib/utils';
 
@@ -397,6 +397,7 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
       año: '',
       motor: '',
       con_inventario: false,
+      solo_nuevos: false,
       ancho_llanta: '',
       relacion_llanta: '',
       diametro_llanta: '',
@@ -614,8 +615,9 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
         </FilterSection>
       )}
 
-      {/* Filtro de inventario */}
-      <div className="border-t border-notion-border pt-4 mt-4">
+      {/* Filtros checkbox */}
+      <div className="border-t border-notion-border pt-4 mt-4 space-y-3">
+        {/* Solo con inventario */}
         <label className="flex items-center gap-3 cursor-pointer group">
           <input
             type="checkbox"
@@ -634,6 +636,28 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
           <span className="text-sm font-medium text-notion-text-primary flex items-center gap-2">
             <Package size={14} className="text-notion-text-secondary" />
             Solo con inventario
+          </span>
+        </label>
+
+        {/* Solo productos nuevos */}
+        <label className="flex items-center gap-3 cursor-pointer group">
+          <input
+            type="checkbox"
+            checked={filtros.solo_nuevos || false}
+            onChange={(e) => handleChange('solo_nuevos', e.target.checked)}
+            className="hidden"
+          />
+          <div className={cn(
+            "w-5 h-5 rounded border-2 flex items-center justify-center transition-all",
+            filtros.solo_nuevos
+              ? "bg-green-500 border-green-600"
+              : "border-notion-border group-hover:border-green-500"
+          )}>
+            {filtros.solo_nuevos && <Check size={14} className="text-white" />}
+          </div>
+          <span className="text-sm font-medium text-notion-text-primary flex items-center gap-2">
+            <Sparkles size={14} className="text-green-500" />
+            Solo productos nuevos
           </span>
         </label>
       </div>

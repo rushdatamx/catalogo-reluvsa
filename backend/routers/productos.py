@@ -45,6 +45,8 @@ def listar_productos(
     tamano_acumulador: Optional[str] = Query(None, description="Tamaño del acumulador"),
     # Búsqueda
     q: Optional[str] = Query(None, description="Búsqueda por texto"),
+    # Filtro de productos nuevos
+    solo_nuevos: bool = Query(False, description="Solo productos nuevos (últimos 60 días)"),
     # Paginación
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100)
@@ -97,6 +99,9 @@ def listar_productos(
 
         if con_inventario:
             where_clauses.append("p.inventario_total > 0")
+
+        if solo_nuevos:
+            where_clauses.append("p.created_at >= datetime('now', '-60 days')")
 
         if marca_vehiculo:
             where_clauses.append("c.marca_vehiculo = ?")
@@ -294,7 +299,11 @@ def listar_productos(
             SELECT DISTINCT
                 p.id, p.sku, p.departamento, p.marca, p.descripcion_original,
                 p.nombre_producto, p.tipo_producto, p.precio_publico, p.precio_mayoreo,
-                p.imagen_url, p.inventario_total
+                p.imagen_url, p.inventario_total,
+                CASE
+                    WHEN p.created_at >= datetime('now', '-60 days')
+                    THEN 1 ELSE 0
+                END as es_nuevo
             {base_query}
             {where_sql}
             ORDER BY p.inventario_total DESC, p.sku
@@ -315,7 +324,8 @@ def listar_productos(
                 precio_publico=row['precio_publico'],
                 precio_mayoreo=row['precio_mayoreo'],
                 imagen_url=row['imagen_url'],
-                inventario_total=row['inventario_total']
+                inventario_total=row['inventario_total'],
+                es_nuevo=bool(row['es_nuevo'])
             ))
 
         return PaginatedResponse(

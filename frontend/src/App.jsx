@@ -16,6 +16,7 @@ function App() {
     año: '',
     motor: '',
     con_inventario: false,
+    solo_nuevos: false,
     ancho_llanta: '',
     relacion_llanta: '',
     diametro_llanta: '',
@@ -239,8 +240,15 @@ function App() {
                   <article
                     key={producto.id}
                     onClick={() => setProductoSeleccionado(producto.sku)}
-                    className="bg-white rounded-xl p-4 border border-notion-border hover:border-reluvsa-yellow hover:shadow-lg cursor-pointer transition-all group"
+                    className="bg-white rounded-xl p-4 border border-notion-border hover:border-reluvsa-yellow hover:shadow-lg cursor-pointer transition-all group relative overflow-hidden"
                   >
+                    {/* Badge NUEVO - Cinta diagonal */}
+                    {producto.es_nuevo && (
+                      <div className="absolute -right-8 top-4 rotate-45 bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400 text-white text-xs font-bold py-1 px-10 shadow-md z-10">
+                        NUEVO
+                      </div>
+                    )}
+
                     {/* Header */}
                     <div className="flex items-start justify-between mb-2">
                       <code className="text-xs text-reluvsa-red font-mono font-semibold">
