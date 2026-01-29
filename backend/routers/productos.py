@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from database import get_db
 from models import ProductoLista, ProductoDetalle, PaginatedResponse, Compatibilidad, InventarioSucursal, EspecificacionesManualRequest, EspecificacionesManuales
+from utils.busqueda_inteligente import analizar_busqueda
 
 router = APIRouter(prefix="/api/productos", tags=["productos"])
 
@@ -114,27 +115,63 @@ def listar_productos(
             params.append(motor)
 
         if q:
-            # Búsqueda súper flexible - busca en TODOS los campos posibles
-            where_clauses.append("""
-                (
-                    p.descripcion_original LIKE ?
-                    OR p.sku LIKE ?
-                    OR p.nombre_producto LIKE ?
-                    OR p.skus_alternos LIKE ?
-                    OR p.marca LIKE ?
-                    OR p.departamento LIKE ?
-                    OR p.tipo_producto LIKE ?
-                    OR p.id IN (
-                        SELECT producto_id FROM compatibilidades
-                        WHERE marca_vehiculo LIKE ?
-                           OR modelo_vehiculo LIKE ?
-                           OR motor LIKE ?
+            # Analizar si es búsqueda inteligente (producto + vehículo)
+            analisis = analizar_busqueda(q)
+
+            if analisis["tipo"] in ("combinada", "solo_vehiculo"):
+                # BÚSQUEDA INTELIGENTE: producto + vehículo (o solo vehículo)
+                # Forzar JOIN con compatibilidades si no existe
+                if "INNER JOIN compatibilidades" not in base_query:
+                    base_query += " INNER JOIN compatibilidades c ON c.producto_id = p.id "
+                    needs_compat_join = True
+
+                vehiculo = analisis['vehiculo'].upper()
+
+                # Filtro por vehículo (modelo o marca)
+                if analisis["tipo_vehiculo"] == "modelo":
+                    where_clauses.append("c.modelo_vehiculo = ?")
+                else:
+                    where_clauses.append("c.marca_vehiculo = ?")
+                params.append(vehiculo)
+
+                # Filtro por año (si se detectó)
+                if analisis.get("año"):
+                    where_clauses.append("c.año_inicio <= ? AND c.año_fin >= ?")
+                    params.extend([analisis["año"], analisis["año"]])
+
+                # Filtro por producto (solo si es búsqueda combinada)
+                if analisis["tipo"] == "combinada":
+                    search_prod = f"%{analisis['producto']}%"
+                    where_clauses.append("""
+                        (p.nombre_producto LIKE ?
+                         OR p.grupo_producto LIKE ?
+                         OR p.tipo_producto LIKE ?
+                         OR p.descripcion_original LIKE ?)
+                    """)
+                    params.extend([search_prod] * 4)
+
+            else:
+                # BÚSQUEDA SIMPLE: busca en TODOS los campos posibles (comportamiento original)
+                where_clauses.append("""
+                    (
+                        p.descripcion_original LIKE ?
+                        OR p.sku LIKE ?
+                        OR p.nombre_producto LIKE ?
+                        OR p.skus_alternos LIKE ?
+                        OR p.marca LIKE ?
+                        OR p.departamento LIKE ?
+                        OR p.tipo_producto LIKE ?
+                        OR p.id IN (
+                            SELECT producto_id FROM compatibilidades
+                            WHERE marca_vehiculo LIKE ?
+                               OR modelo_vehiculo LIKE ?
+                               OR motor LIKE ?
+                        )
                     )
-                )
-            """)
-            search_term = f"%{q}%"
-            # 7 campos de productos + 3 de compatibilidades = 10 parámetros
-            params.extend([search_term] * 10)
+                """)
+                search_term = f"%{q}%"
+                # 7 campos de productos + 3 de compatibilidades = 10 parámetros
+                params.extend([search_term] * 10)
 
         # Filtros para LLANTAS (usando subqueries para múltiples características)
         if ancho_llanta:

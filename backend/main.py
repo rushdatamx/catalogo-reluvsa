@@ -2,15 +2,30 @@
 API FastAPI para el catálogo de RELUVSA
 """
 import os
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from routers import filtros, productos
+from utils.busqueda_inteligente import cargar_vocabulario_vehiculos
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Ciclo de vida de la aplicación - carga vocabulario al iniciar."""
+    # Startup: cargar vocabulario de vehículos para búsqueda inteligente
+    db_path = os.path.join(os.path.dirname(__file__), "data", "catalogo.db")
+    if not os.path.exists(db_path):
+        db_path = os.path.join(os.path.dirname(__file__), "..", "data", "catalogo.db")
+    cargar_vocabulario_vehiculos(db_path)
+    yield
+    # Shutdown: nada que hacer
 
 app = FastAPI(
     title="Catálogo RELUVSA API",
     description="API para el catálogo de refacciones de RELUVSA con filtros en cascada",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Configurar CORS dinámico para desarrollo y producción
