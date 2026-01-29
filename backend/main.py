@@ -31,7 +31,7 @@ app = FastAPI(
 # Configurar CORS dinámico para desarrollo y producción
 cors_origins = os.getenv(
     "CORS_ORIGINS",
-    "http://localhost:3000"
+    "http://localhost:3000,https://catalogo-reluvsa.vercel.app,https://catalogo-reluvsa-git-main-rushdatas-projects.vercel.app"
 ).split(",")
 
 app.add_middleware(
