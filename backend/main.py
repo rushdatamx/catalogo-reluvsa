@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from routers import filtros, productos
+from database import DATABASE_PATH
 from utils.busqueda_inteligente import cargar_vocabulario_vehiculos
 
 
@@ -14,10 +15,7 @@ from utils.busqueda_inteligente import cargar_vocabulario_vehiculos
 async def lifespan(app: FastAPI):
     """Ciclo de vida de la aplicación - carga vocabulario al iniciar."""
     # Startup: cargar vocabulario de vehículos para búsqueda inteligente
-    db_path = os.path.join(os.path.dirname(__file__), "data", "catalogo.db")
-    if not os.path.exists(db_path):
-        db_path = os.path.join(os.path.dirname(__file__), "..", "data", "catalogo.db")
-    cargar_vocabulario_vehiculos(db_path)
+    cargar_vocabulario_vehiculos(DATABASE_PATH)
     yield
     # Shutdown: nada que hacer
 
