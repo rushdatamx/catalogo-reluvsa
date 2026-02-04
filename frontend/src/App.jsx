@@ -320,9 +320,9 @@ function AppContent() {
                     onClick={() => setProductoSeleccionado(producto.sku)}
                     className="bg-white rounded-xl p-4 border border-notion-border hover:border-reluvsa-yellow hover:shadow-lg cursor-pointer transition-all group relative overflow-hidden"
                   >
-                    {/* Badge NUEVO - Cinta diagonal */}
+                    {/* Badge NUEVO - Esquina superior izquierda */}
                     {producto.es_nuevo && (
-                      <div className="absolute -right-8 top-4 rotate-45 bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400 text-white text-xs font-bold py-1 px-10 shadow-md z-10">
+                      <div className="absolute left-0 top-0 bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400 text-white text-[10px] font-bold px-2 py-0.5 rounded-br-lg shadow-sm z-10">
                         NUEVO
                       </div>
                     )}
