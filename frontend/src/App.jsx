@@ -1,7 +1,62 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, Package, Car, Link2, Filter, X, ChevronDown, CheckCircle, XCircle, AlertCircle, Tag, Calendar, Gauge, Truck, Settings, Save, LogOut, User } from 'lucide-react';
+import { Search, Package, Car, Link2, Filter, X, ChevronDown, CheckCircle, XCircle, AlertCircle, Tag, Calendar, Gauge, Truck, Settings, Save, LogOut, User, ImageOff } from 'lucide-react';
 import { getProductos, getStats, getProducto, actualizarEspecificacionesManuales } from './services/api';
 import { cn } from './lib/utils';
+
+// URL base para imágenes via proxy
+const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+const getImageUrl = (sku) => `${API_BASE}/images/${encodeURIComponent(sku)}`;
+
+// Componente de imagen de producto con fallback
+function ProductImage({ sku, alt, className, size = 'md' }) {
+  const [error, setError] = React.useState(false);
+  const [loading, setLoading] = React.useState(true);
+
+  const sizeClasses = {
+    sm: 'w-16 h-16',
+    md: 'w-24 h-24',
+    lg: 'w-48 h-48'
+  };
+
+  if (error) {
+    return (
+      <div className={cn(
+        "flex items-center justify-center bg-notion-bg-subtle rounded-lg",
+        sizeClasses[size],
+        className
+      )}>
+        <ImageOff className="text-notion-text-secondary" size={size === 'lg' ? 48 : size === 'md' ? 32 : 20} />
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn("relative", sizeClasses[size], className)}>
+      {loading && (
+        <div className={cn(
+          "absolute inset-0 flex items-center justify-center bg-notion-bg-subtle rounded-lg animate-pulse",
+          sizeClasses[size]
+        )}>
+          <Package className="text-notion-text-secondary" size={size === 'lg' ? 48 : size === 'md' ? 32 : 20} />
+        </div>
+      )}
+      <img
+        src={getImageUrl(sku)}
+        alt={alt}
+        className={cn(
+          "object-contain rounded-lg",
+          sizeClasses[size],
+          loading && "opacity-0"
+        )}
+        onLoad={() => setLoading(false)}
+        onError={() => {
+          setLoading(false);
+          setError(true);
+        }}
+      />
+    </div>
+  );
+}
 
 // Componentes de Filtros
 import FiltrosCascada from './components/FiltrosCascada';
@@ -272,43 +327,50 @@ function AppContent() {
                       </div>
                     )}
 
-                    {/* Header - SKU y Marca juntos */}
-                    <div className="flex items-center gap-2 mb-2">
-                      <code className="text-xs text-reluvsa-red font-mono font-semibold">
-                        {producto.sku}
-                      </code>
-                      <span className="text-xs bg-notion-bg-subtle px-2 py-0.5 rounded font-medium text-notion-text-secondary">
-                        {producto.marca}
-                      </span>
-                    </div>
+                    {/* Layout con imagen */}
+                    <div className="flex gap-3">
+                      {/* Imagen del producto */}
+                      <ProductImage
+                        sku={producto.sku}
+                        alt={producto.nombre_producto || producto.sku}
+                        size="md"
+                        className="flex-shrink-0"
+                      />
 
-                    {/* Nombre */}
-                    <h3 className="font-medium text-notion-text-primary mb-1 line-clamp-2 group-hover:text-reluvsa-black">
-                      {producto.nombre_producto || producto.tipo_producto || 'Producto'}
-                    </h3>
+                      {/* Contenido */}
+                      <div className="flex-1 min-w-0">
+                        {/* Header - SKU y Marca juntos */}
+                        <div className="flex items-center gap-2 mb-1">
+                          <code className="text-xs text-reluvsa-red font-mono font-semibold">
+                            {producto.sku}
+                          </code>
+                          <span className="text-xs bg-notion-bg-subtle px-2 py-0.5 rounded font-medium text-notion-text-secondary">
+                            {producto.marca}
+                          </span>
+                        </div>
 
-                    {/* Descripción */}
-                    <p className="text-sm text-notion-text-secondary mb-4 line-clamp-2">
-                      {producto.descripcion_original}
-                    </p>
+                        {/* Nombre */}
+                        <h3 className="font-medium text-notion-text-primary mb-1 line-clamp-2 group-hover:text-reluvsa-black text-sm">
+                          {producto.nombre_producto || producto.tipo_producto || 'Producto'}
+                        </h3>
 
-                    {/* Footer */}
-                    <div className="flex items-center justify-between pt-3 border-t border-notion-border">
-                      <span className="text-lg font-bold text-reluvsa-red">
-                        ${producto.precio_publico?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) || '0.00'}
-                      </span>
-
-                      {producto.inventario_total > 0 ? (
-                        <span className="flex items-center gap-1 text-xs font-medium text-success bg-success/10 px-2 py-1 rounded-full">
-                          <CheckCircle size={12} />
-                          {producto.inventario_total} en stock
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1 text-xs font-medium text-danger bg-danger/10 px-2 py-1 rounded-full">
-                          <XCircle size={12} />
-                          Sin stock
-                        </span>
-                      )}
+                        {/* Precio inline con inventario */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-base font-bold text-reluvsa-red">
+                            ${producto.precio_publico?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) || '0.00'}
+                          </span>
+                          {producto.inventario_total > 0 ? (
+                            <span className="flex items-center gap-1 text-xs font-medium text-success">
+                              <CheckCircle size={10} />
+                              {producto.inventario_total}
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1 text-xs font-medium text-danger">
+                              <XCircle size={10} />
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </article>
                 ))}
@@ -376,16 +438,25 @@ function AppContent() {
               <>
                 {/* Header del Modal */}
                 <div className="sticky top-0 bg-white border-b border-notion-border p-6 flex items-start justify-between">
-                  <div>
-                    <code className="text-sm text-reluvsa-red font-mono font-semibold">
-                      {detalleProducto.sku}
-                    </code>
-                    <h2 className="text-xl font-semibold text-notion-text-primary mt-1">
-                      {detalleProducto.nombre_producto || detalleProducto.tipo_producto}
-                    </h2>
-                    <span className="inline-block mt-2 text-sm bg-notion-bg-subtle px-3 py-1 rounded-full font-medium">
-                      {detalleProducto.marca}
-                    </span>
+                  <div className="flex gap-4">
+                    {/* Imagen grande del producto */}
+                    <ProductImage
+                      sku={detalleProducto.sku}
+                      alt={detalleProducto.nombre_producto || detalleProducto.sku}
+                      size="lg"
+                      className="flex-shrink-0"
+                    />
+                    <div>
+                      <code className="text-sm text-reluvsa-red font-mono font-semibold">
+                        {detalleProducto.sku}
+                      </code>
+                      <h2 className="text-xl font-semibold text-notion-text-primary mt-1">
+                        {detalleProducto.nombre_producto || detalleProducto.tipo_producto}
+                      </h2>
+                      <span className="inline-block mt-2 text-sm bg-notion-bg-subtle px-3 py-1 rounded-full font-medium">
+                        {detalleProducto.marca}
+                      </span>
+                    </div>
                   </div>
                   <button
                     onClick={() => setProductoSeleccionado(null)}
