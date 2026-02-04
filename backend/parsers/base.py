@@ -1456,21 +1456,45 @@ class BaseParser:
         return año
 
     def _extraer_modelo_marca(self, contexto: str, compat: Compatibilidad):
-        """Extrae el modelo y marca del vehículo del contexto"""
+        """Extrae el modelo y marca del vehículo del contexto.
+
+        Busca el modelo MÁS CERCANO al final del contexto (más cercano al año),
+        no el primero que encuentre.
+        """
         contexto_upper = contexto.upper()
+        contexto_busqueda = f' {contexto_upper} '
 
-        # Primero buscar modelos conocidos
+        # Buscar TODOS los modelos conocidos y quedarnos con el más cercano al final
+        mejor_modelo = None
+        mejor_marca = None
+        mejor_posicion = -1
+
         for modelo, marca in self.MODELOS_CONOCIDOS.items():
-            if f' {modelo} ' in f' {contexto_upper} ' or f' {modelo},' in f' {contexto_upper},':
-                compat.modelo_vehiculo = modelo
-                compat.marca_vehiculo = marca
-                return
+            # Buscar con espacios alrededor
+            pos = contexto_busqueda.rfind(f' {modelo} ')
+            if pos > mejor_posicion:
+                mejor_posicion = pos
+                mejor_modelo = modelo
+                mejor_marca = marca
+            # También buscar con coma
+            pos_coma = contexto_busqueda.rfind(f' {modelo},')
+            if pos_coma > mejor_posicion:
+                mejor_posicion = pos_coma
+                mejor_modelo = modelo
+                mejor_marca = marca
 
-        # Si no encontramos modelo, buscar marca
+        if mejor_modelo:
+            compat.modelo_vehiculo = mejor_modelo
+            compat.marca_vehiculo = mejor_marca
+            return
+
+        # Si no encontramos modelo, buscar marca más cercana al final
+        mejor_marca_pos = -1
         for marca_text, marca_norm in self.MARCAS_VEHICULO.items():
-            if f' {marca_text} ' in f' {contexto_upper} ':
+            pos = contexto_busqueda.rfind(f' {marca_text} ')
+            if pos > mejor_marca_pos:
+                mejor_marca_pos = pos
                 compat.marca_vehiculo = marca_norm
-                return
 
     def _limpiar_skus_inicio(self, descripcion: str) -> str:
         """Remueve SKUs alternos del inicio de la descripción.
