@@ -237,10 +237,16 @@ def actualizar_inventario(csv_path: str, db_path: str = None):
             print(f"  • {sku}")
         if stats['nuevos'] > 20:
             print(f"  ... y {stats['nuevos'] - 20} más")
-        print(f"\n⚠️  IMPORTANTE: Ejecutar extractores para productos nuevos:")
-        print("    python3 scripts/extraer_compatibilidades.py")
-        print("    python3 scripts/extraer_caracteristicas.py")
-        print("    python3 scripts/calcular_intercambiables.py")
+
+        # Procesar automáticamente productos nuevos
+        print(f"\n⚙️  Procesando {stats['nuevos']} productos nuevos...")
+        try:
+            from scripts.procesar_productos_nuevos import procesar_productos_nuevos
+            result = procesar_productos_nuevos(days=1, verbose=True)
+            stats['procesamiento_nuevos'] = result
+        except Exception as e:
+            print(f"⚠️  Error al procesar productos nuevos: {e}")
+            print("    Ejecutar manualmente: python3 scripts/procesar_productos_nuevos.py")
 
     if stats['errores']:
         print(f"\n{'─'*60}")
