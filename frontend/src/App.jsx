@@ -249,8 +249,8 @@ function App() {
                       </div>
                     )}
 
-                    {/* Header */}
-                    <div className="flex items-start justify-between mb-2">
+                    {/* Header - SKU y Marca juntos */}
+                    <div className="flex items-center gap-2 mb-2">
                       <code className="text-xs text-reluvsa-red font-mono font-semibold">
                         {producto.sku}
                       </code>
