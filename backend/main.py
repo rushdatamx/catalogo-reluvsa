@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import filtros, productos
+from routers import filtros, productos, auth
 from database import DATABASE_PATH
 from utils.busqueda_inteligente import cargar_vocabulario_vehiculos
 
@@ -41,6 +41,7 @@ app.add_middleware(
 )
 
 # Registrar routers
+app.include_router(auth.router)
 app.include_router(filtros.router)
 app.include_router(productos.router)
 

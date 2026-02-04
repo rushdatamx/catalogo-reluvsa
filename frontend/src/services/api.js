@@ -8,6 +8,28 @@ const api = axios.create({
   timeout: 10000,
 });
 
+// Interceptor para agregar token JWT a todas las peticiones
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Interceptor para manejar 401 (token expirado o inválido)
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.reload();
+    }
+    return Promise.reject(error);
+  }
+);
+
 // Filtros básicos
 export const getFiltros = {
   departamentos: () => api.get('/filtros/departamentos'),

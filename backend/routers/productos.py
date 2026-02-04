@@ -3,7 +3,7 @@ Endpoints para productos
 """
 import json
 from typing import Optional, List
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
 import math
 
 import sys
@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from database import get_db
 from models import ProductoLista, ProductoDetalle, PaginatedResponse, Compatibilidad, InventarioSucursal, EspecificacionesManualRequest, EspecificacionesManuales
 from utils.busqueda_inteligente import analizar_busqueda
+from routers.auth import require_admin
 
 router = APIRouter(prefix="/api/productos", tags=["productos"])
 
@@ -411,8 +412,8 @@ def buscar_productos(
 
 
 @router.put("/{sku}/especificaciones-manuales")
-def actualizar_especificaciones_manuales(sku: str, datos: EspecificacionesManualRequest):
-    """Crea o actualiza especificaciones manuales de un producto"""
+def actualizar_especificaciones_manuales(sku: str, datos: EspecificacionesManualRequest, user=Depends(require_admin)):
+    """Crea o actualiza especificaciones manuales de un producto (solo admin)"""
     with get_db() as conn:
         cursor = conn.cursor()
 

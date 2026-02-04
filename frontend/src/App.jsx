@@ -1,12 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, Package, Car, Link2, Filter, X, ChevronDown, CheckCircle, XCircle, AlertCircle, Tag, Calendar, Gauge, Truck, Settings, Save } from 'lucide-react';
+import { Search, Package, Car, Link2, Filter, X, ChevronDown, CheckCircle, XCircle, AlertCircle, Tag, Calendar, Gauge, Truck, Settings, Save, LogOut, User } from 'lucide-react';
 import { getProductos, getStats, getProducto, actualizarEspecificacionesManuales } from './services/api';
 import { cn } from './lib/utils';
 
 // Componentes de Filtros
 import FiltrosCascada from './components/FiltrosCascada';
 
-function App() {
+// Autenticación
+import { AuthProvider, useAuth } from './context/AuthContext';
+import Login from './components/Login';
+
+function AppContent() {
+  const { user, logout, isAdmin } = useAuth();
   const [filtros, setFiltros] = useState({
     departamento: '',
     marca: '',
@@ -158,22 +163,40 @@ function App() {
               className="h-12 object-contain"
             />
 
-            {stats && (
-              <div className="hidden md:flex items-center gap-4 text-reluvsa-black">
-                <div className="flex items-center gap-2 bg-black/10 px-3 py-1.5 rounded-full text-sm font-medium">
-                  <Package size={16} />
-                  <span>{stats.total_productos?.toLocaleString()} productos</span>
+            <div className="flex items-center gap-4">
+              {stats && (
+                <div className="hidden md:flex items-center gap-4 text-reluvsa-black">
+                  <div className="flex items-center gap-2 bg-black/10 px-3 py-1.5 rounded-full text-sm font-medium">
+                    <Package size={16} />
+                    <span>{stats.total_productos?.toLocaleString()} productos</span>
+                  </div>
+                  <div className="flex items-center gap-2 bg-black/10 px-3 py-1.5 rounded-full text-sm font-medium">
+                    <Car size={16} />
+                    <span>{stats.marcas_vehiculo} marcas</span>
+                  </div>
+                  <div className="flex items-center gap-2 bg-black/10 px-3 py-1.5 rounded-full text-sm font-medium">
+                    <Link2 size={16} />
+                    <span>{stats.total_compatibilidades?.toLocaleString()} compat.</span>
+                  </div>
                 </div>
+              )}
+              {/* Usuario y Logout */}
+              <div className="flex items-center gap-2">
                 <div className="flex items-center gap-2 bg-black/10 px-3 py-1.5 rounded-full text-sm font-medium">
-                  <Car size={16} />
-                  <span>{stats.marcas_vehiculo} marcas</span>
+                  <User size={16} />
+                  <span>{user?.username}</span>
+                  {isAdmin() && (
+                    <span className="bg-reluvsa-red text-white text-xs px-1.5 py-0.5 rounded">Admin</span>
+                  )}
                 </div>
-                <div className="flex items-center gap-2 bg-black/10 px-3 py-1.5 rounded-full text-sm font-medium">
-                  <Link2 size={16} />
-                  <span>{stats.total_compatibilidades?.toLocaleString()} compat.</span>
-                </div>
+                <button
+                  onClick={logout}
+                  className="flex items-center gap-1 bg-black/10 hover:bg-black/20 px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
+                >
+                  <LogOut size={16} />
+                </button>
               </div>
-            )}
+            </div>
           </div>
 
           {/* Buscador */}
@@ -483,77 +506,79 @@ function App() {
                     </div>
                   )}
 
-                  {/* Especificaciones Manuales */}
-                  <div>
-                    <h3 className="flex items-center gap-2 font-semibold text-notion-text-primary mb-3">
-                      <Settings size={18} />
-                      Especificaciones Manuales
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {/* Campo Garantía */}
-                      <div className="bg-notion-bg-subtle p-3 rounded-lg">
-                        <label className="text-xs text-notion-text-secondary mb-1 block">Garantía</label>
-                        <input
-                          type="text"
-                          value={especsManuales.garantia}
-                          onChange={(e) => setEspecsManuales({...especsManuales, garantia: e.target.value})}
-                          placeholder="Ej: 1 año"
-                          className="w-full px-2 py-1.5 border border-notion-border rounded text-sm focus:outline-none focus:border-reluvsa-yellow"
-                        />
+                  {/* Especificaciones Manuales - Solo visible para admin */}
+                  {isAdmin() && (
+                    <div>
+                      <h3 className="flex items-center gap-2 font-semibold text-notion-text-primary mb-3">
+                        <Settings size={18} />
+                        Especificaciones Manuales
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* Campo Garantía */}
+                        <div className="bg-notion-bg-subtle p-3 rounded-lg">
+                          <label className="text-xs text-notion-text-secondary mb-1 block">Garantía</label>
+                          <input
+                            type="text"
+                            value={especsManuales.garantia}
+                            onChange={(e) => setEspecsManuales({...especsManuales, garantia: e.target.value})}
+                            placeholder="Ej: 1 año"
+                            className="w-full px-2 py-1.5 border border-notion-border rounded text-sm focus:outline-none focus:border-reluvsa-yellow"
+                          />
+                        </div>
+                        {/* Campo Material */}
+                        <div className="bg-notion-bg-subtle p-3 rounded-lg">
+                          <label className="text-xs text-notion-text-secondary mb-1 block">Material</label>
+                          <input
+                            type="text"
+                            value={especsManuales.material}
+                            onChange={(e) => setEspecsManuales({...especsManuales, material: e.target.value})}
+                            placeholder="Ej: Acero inoxidable"
+                            className="w-full px-2 py-1.5 border border-notion-border rounded text-sm focus:outline-none focus:border-reluvsa-yellow"
+                          />
+                        </div>
+                        {/* Campo Posición */}
+                        <div className="bg-notion-bg-subtle p-3 rounded-lg">
+                          <label className="text-xs text-notion-text-secondary mb-1 block">Posición</label>
+                          <input
+                            type="text"
+                            value={especsManuales.posicion}
+                            onChange={(e) => setEspecsManuales({...especsManuales, posicion: e.target.value})}
+                            placeholder="Ej: Delantera izquierda"
+                            className="w-full px-2 py-1.5 border border-notion-border rounded text-sm focus:outline-none focus:border-reluvsa-yellow"
+                          />
+                        </div>
                       </div>
-                      {/* Campo Material */}
-                      <div className="bg-notion-bg-subtle p-3 rounded-lg">
-                        <label className="text-xs text-notion-text-secondary mb-1 block">Material</label>
-                        <input
-                          type="text"
-                          value={especsManuales.material}
-                          onChange={(e) => setEspecsManuales({...especsManuales, material: e.target.value})}
-                          placeholder="Ej: Acero inoxidable"
-                          className="w-full px-2 py-1.5 border border-notion-border rounded text-sm focus:outline-none focus:border-reluvsa-yellow"
-                        />
-                      </div>
-                      {/* Campo Posición */}
-                      <div className="bg-notion-bg-subtle p-3 rounded-lg">
-                        <label className="text-xs text-notion-text-secondary mb-1 block">Posición</label>
-                        <input
-                          type="text"
-                          value={especsManuales.posicion}
-                          onChange={(e) => setEspecsManuales({...especsManuales, posicion: e.target.value})}
-                          placeholder="Ej: Delantera izquierda"
-                          className="w-full px-2 py-1.5 border border-notion-border rounded text-sm focus:outline-none focus:border-reluvsa-yellow"
-                        />
-                      </div>
+                      {/* Botón Guardar */}
+                      <button
+                        onClick={handleGuardarEspecs}
+                        disabled={guardandoEspecs}
+                        className={cn(
+                          "mt-3 flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
+                          especsGuardadas
+                            ? "bg-success text-white"
+                            : "bg-reluvsa-yellow text-reluvsa-black hover:bg-yellow-400",
+                          "disabled:opacity-50 disabled:cursor-not-allowed"
+                        )}
+                      >
+                        {guardandoEspecs ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-reluvsa-black border-t-transparent rounded-full animate-spin"></div>
+                            Guardando...
+                          </>
+                        ) : especsGuardadas ? (
+                          <>
+                            <CheckCircle size={16} />
+                            Guardado
+                          </>
+                        ) : (
+                          <>
+                            <Save size={16} />
+                            Guardar Especificaciones
+                          </>
+                        )}
+                      </button>
                     </div>
-                    {/* Botón Guardar */}
-                    <button
-                      onClick={handleGuardarEspecs}
-                      disabled={guardandoEspecs}
-                      className={cn(
-                        "mt-3 flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
-                        especsGuardadas
-                          ? "bg-success text-white"
-                          : "bg-reluvsa-yellow text-reluvsa-black hover:bg-yellow-400",
-                        "disabled:opacity-50 disabled:cursor-not-allowed"
-                      )}
-                    >
-                      {guardandoEspecs ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-reluvsa-black border-t-transparent rounded-full animate-spin"></div>
-                          Guardando...
-                        </>
-                      ) : especsGuardadas ? (
-                        <>
-                          <CheckCircle size={16} />
-                          Guardado
-                        </>
-                      ) : (
-                        <>
-                          <Save size={16} />
-                          Guardar Especificaciones
-                        </>
-                      )}
-                    </button>
-                  </div>
+                  )}
                 </div>
               </>
             ) : (
@@ -566,6 +591,35 @@ function App() {
       )}
     </div>
   );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppWithAuth />
+    </AuthProvider>
+  );
+}
+
+function AppWithAuth() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-red-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <p className="mt-4 text-gray-500">Cargando...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Login />;
+  }
+
+  return <AppContent />;
 }
 
 export default App;
