@@ -156,27 +156,49 @@ def listar_productos(
                     params.extend([search_prod] * 4)
 
             else:
-                # BÚSQUEDA SIMPLE: busca en TODOS los campos posibles (comportamiento original)
-                where_clauses.append("""
-                    (
-                        p.descripcion_original LIKE ?
-                        OR p.sku LIKE ?
-                        OR p.nombre_producto LIKE ?
-                        OR p.skus_alternos LIKE ?
-                        OR p.marca LIKE ?
-                        OR p.departamento LIKE ?
-                        OR p.tipo_producto LIKE ?
-                        OR p.id IN (
-                            SELECT producto_id FROM compatibilidades
-                            WHERE marca_vehiculo LIKE ?
-                               OR modelo_vehiculo LIKE ?
-                               OR motor LIKE ?
+                # BÚSQUEDA SIMPLE MEJORADA: soporta múltiples palabras con AND
+                palabras = q.strip().split()
+
+                if len(palabras) == 1:
+                    # Una sola palabra: comportamiento original (busca en todos los campos)
+                    search_term = f"%{q}%"
+                    where_clauses.append("""
+                        (
+                            p.descripcion_original LIKE ?
+                            OR p.sku LIKE ?
+                            OR p.nombre_producto LIKE ?
+                            OR p.skus_alternos LIKE ?
+                            OR p.marca LIKE ?
+                            OR p.departamento LIKE ?
+                            OR p.tipo_producto LIKE ?
+                            OR p.id IN (
+                                SELECT producto_id FROM compatibilidades
+                                WHERE marca_vehiculo LIKE ?
+                                   OR modelo_vehiculo LIKE ?
+                                   OR motor LIKE ?
+                            )
                         )
-                    )
-                """)
-                search_term = f"%{q}%"
-                # 7 campos de productos + 3 de compatibilidades = 10 parámetros
-                params.extend([search_term] * 10)
+                    """)
+                    # 7 campos de productos + 3 de compatibilidades = 10 parámetros
+                    params.extend([search_term] * 10)
+                else:
+                    # Múltiples palabras: AND entre todas
+                    # Cada palabra debe aparecer en AL MENOS UN campo del producto
+                    palabra_conditions = []
+                    for palabra in palabras:
+                        term = f"%{palabra}%"
+                        palabra_conditions.append("""
+                            (p.descripcion_original LIKE ?
+                             OR p.sku LIKE ?
+                             OR p.nombre_producto LIKE ?
+                             OR p.skus_alternos LIKE ?
+                             OR p.marca LIKE ?
+                             OR p.tipo_producto LIKE ?)
+                        """)
+                        params.extend([term] * 6)
+
+                    # Unir con AND: todas las palabras deben estar presentes
+                    where_clauses.append(f"({' AND '.join(palabra_conditions)})")
 
         # Filtros para LLANTAS (usando subqueries para múltiples características)
         if ancho_llanta:
