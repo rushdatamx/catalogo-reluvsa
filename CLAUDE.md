@@ -14,7 +14,9 @@ catalogo-reluvsa/
 │   ├── models.py           # Modelos Pydantic
 │   ├── routers/
 │   │   ├── productos.py    # GET /api/productos, /buscar, /{sku}
-│   │   └── filtros.py      # Endpoints de filtros en cascada
+│   │   ├── filtros.py      # Endpoints de filtros en cascada
+│   │   ├── auth.py         # Autenticación JWT (login, roles)
+│   │   └── images.py       # Proxy de imágenes (HTTPS→HTTP)
 │   ├── parsers/            # 82 parsers de marcas
 │   │   ├── __init__.py     # Mapeo marca → parser
 │   │   ├── base.py         # Clase base con patrones comunes
@@ -29,6 +31,7 @@ catalogo-reluvsa/
 │       ├── reprocesar_completo.py       # Reprocesa nombres + compatibilidades
 │       ├── reprocesar_compatibilidades.py
 │       ├── reprocesar_nombres.py
+│       ├── procesar_productos_nuevos.py # Procesa productos recién importados
 │       └── validar_*.py                 # Scripts de validación
 ├── frontend/               # React SPA
 │   ├── src/
@@ -55,10 +58,11 @@ catalogo-reluvsa/
 
 ## Stack Tecnológico
 
-- **Backend**: Python 3.x + FastAPI + SQLite
+- **Backend**: Python 3.x + FastAPI + SQLite + httpx (async HTTP client)
 - **Frontend**: React 18 + Tailwind CSS + Lucide Icons
 - **Base de datos**: SQLite (archivo local, se copia a Railway en deploy)
 - **Parsers**: 82 marcas con extracción específica
+- **Autenticación**: JWT (PyJWT)
 - **Deploy**: Railway (backend) + GitHub auto-deploy
 
 ## Base de Datos
@@ -242,6 +246,16 @@ GET /api/filtros/acumuladores/tamanos
 
 # Stats
 GET /api/stats
+
+# Imágenes (proxy HTTPS)
+GET /api/images/{sku}
+    # Proxy para cargar imágenes HTTP vía HTTPS
+    # Cache: 24 horas | Timeout: 10s
+
+# Autenticación
+POST /api/auth/login
+    # Body: { username, password }
+    # Response: { access_token, token_type }
 ```
 
 ## Frontend - Estructura de Componentes
@@ -301,7 +315,7 @@ Productos que comparten al menos un SKU (principal o alterno) son considerados i
 
 ### UI
 En el modal de detalle, sección "Productos Intercambiables":
-- Lista con marca (badge negro) + nombre del producto
+- Lista con marca (badge negro) + **SKU del producto** (no el nombre)
 - Indicador de stock (verde/gris)
 - Click navega al producto intercambiable
 
@@ -405,17 +419,18 @@ RESUMEN DE ACTUALIZACIÓN
 ============================================================
 ```
 
-#### 5. Ejecutar Extractores (si hay productos nuevos)
+#### 5. Procesamiento Automático de Productos Nuevos
 
+El script `actualizar_inventario.py` ahora llama automáticamente a `procesar_productos_nuevos.py` cuando detecta productos nuevos. Este proceso:
+
+- Extrae nombres limpios (sin códigos/números al inicio)
+- Extrae compatibilidades vehiculares usando los parsers de marcas
+- Extrae tipo de producto y SKUs alternos
+- Calcula productos intercambiables
+
+**Si necesitas reprocesar manualmente:**
 ```bash
-# Extraer compatibilidades vehiculares
-python3 scripts/extraer_compatibilidades.py
-
-# Extraer características (llantas, aceites, acumuladores)
-python3 scripts/extraer_caracteristicas.py
-
-# Recalcular productos intercambiables
-python3 scripts/calcular_intercambiables.py
+python3 scripts/procesar_productos_nuevos.py --days 60
 ```
 
 ### Comportamiento del Script
@@ -436,7 +451,8 @@ python3 scripts/calcular_intercambiables.py
 
 - Productos con `created_at` en los últimos **60 días** muestran badge "NUEVO"
 - Checkbox "Solo productos nuevos" filtra estos productos
-- El badge es una cinta diagonal rosa/coral en la esquina superior derecha
+- El badge es una etiqueta en la **esquina superior izquierda** con degradado rosa/coral
+- Posición: `left-0 top-0 rounded-br-lg` (no tapa la marca del producto)
 
 ## Parsers de Marcas
 
@@ -457,6 +473,17 @@ class ParserBase:
         r'(\d{4})\+',                 # 2015+
     ]
 ```
+
+### Detección de Modelo Más Cercano al Año
+
+El método `_extraer_modelo_marca()` busca el modelo **más cercano al año** en la descripción, no el primero. Esto es crítico para descripciones con múltiples vehículos:
+
+```
+"EQUINOX 3.4L 05/09 MALIBU 3.5L 04/06 VENTURE 3.4L 97/05"
+                                      ^^^^^^^ Detecta VENTURE (más cercano a 97/05)
+```
+
+Usa `rfind()` para encontrar la posición más a la derecha del modelo, garantizando que se asocie correctamente con su año.
 
 ### Marcas con Parser Específico
 82 parsers en `backend/parsers/` para marcas como: AC DELCO, GONHER, SYD, INJETECH, MONROE, NGK, BOSCH, etc.
@@ -501,6 +528,52 @@ sqlite3 data/catalogo.db "SELECT COUNT(*) FROM productos_intercambiables"
 - `database.py` copia la DB al directorio de Railway si no existe o es más pequeña
 - Los cambios de schema se aplican con ALTER TABLE idempotente
 
+## Sistema de Autenticación
+
+### Endpoint de Login
+```
+POST /api/auth/login
+Body: { "username": "usuario", "password": "contraseña" }
+Response: { "access_token": "JWT...", "token_type": "bearer" }
+```
+
+### Configuración
+- Implementado en `backend/routers/auth.py`
+- JWT con expiración configurable
+- Roles de usuario para control de acceso futuro
+
+## Proxy de Imágenes
+
+### Problema Resuelto
+El frontend en HTTPS (Railway/Vercel) no puede cargar imágenes del servidor interno HTTP de RELUVSA debido a **Mixed Content blocking** del navegador.
+
+### Solución
+Endpoint proxy en el backend que:
+1. Recibe petición HTTPS del frontend
+2. Hace fetch HTTP interno al servidor de imágenes
+3. Retorna la imagen con headers HTTPS
+
+### Endpoint
+```
+GET /api/images/{sku}
+```
+
+### Implementación (`backend/routers/images.py`)
+- Usa `httpx` para peticiones async
+- Cache-Control: 24 horas (86400 segundos)
+- Timeout: 10 segundos
+- Maneja errores con 404/502
+
+### Frontend
+Componente `ProductImage` con:
+- Estado de carga (skeleton)
+- Fallback a icono si no hay imagen
+- Helper: `getImageUrl(sku)` construye URL del proxy
+
+### Disponibilidad de Imágenes
+- ~19% de productos tienen imagen en el servidor RELUVSA
+- ~81% no tienen imagen (limitación del servidor interno, no del código)
+
 ## Agentes Expertos Disponibles
 
 ### /experto-catalogo
@@ -528,9 +601,10 @@ Se activan por MARCA (CHECKER, EXTREMA, CAMEL), no por departamento.
 
 ## Próximos Pasos Sugeridos
 
-1. **Imágenes**: Implementar carga/display de imágenes de productos
+1. ~~**Imágenes**: Implementar carga/display de imágenes de productos~~ ✅ Implementado (proxy HTTPS)
 2. **Carrito**: Agregar funcionalidad de cotización/carrito
 3. **Exportación**: PDF/Excel de búsquedas
-4. **Usuarios**: Sistema de login para empleados
+4. ~~**Usuarios**: Sistema de login para empleados~~ ✅ Implementado (JWT básico)
 5. **Analytics**: Tracking de búsquedas más comunes
 6. **Búsqueda avanzada**: Autocompletado, sugerencias
+7. **Mejora de imágenes**: Solicitar a RELUVSA actualizar imágenes faltantes (~81%)
