@@ -28,17 +28,22 @@ def ensure_database():
         print("ADVERTENCIA: No se encontró la base de datos origen")
         return
 
-    source_size = source_db.stat().st_size
+    source_stat = source_db.stat()
+    source_size = source_stat.st_size
+    source_mtime = source_stat.st_mtime
+
     dest_size = db_path.stat().st_size if db_path.exists() else 0
+    dest_mtime = db_path.stat().st_mtime if db_path.exists() else 0
 
-    print(f"Tamaño DB origen: {source_size} bytes")
-    print(f"Tamaño DB destino: {dest_size} bytes")
+    print(f"Tamaño DB origen: {source_size} bytes, mtime: {source_mtime}")
+    print(f"Tamaño DB destino: {dest_size} bytes, mtime: {dest_mtime}")
 
-    # Copiar si: no existe destino, destino vacío (<10KB), o origen es más grande
+    # Copiar si: no existe destino, destino vacío (<10KB), origen más grande, o origen más reciente
     should_copy = (
         not db_path.exists() or
         dest_size < 10000 or
-        source_size > dest_size
+        source_size > dest_size or
+        source_mtime > dest_mtime
     )
 
     if should_copy:
