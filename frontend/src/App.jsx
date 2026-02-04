@@ -561,9 +561,9 @@ function AppContent() {
                               <span className="bg-reluvsa-black text-white text-xs font-semibold px-2 py-0.5 rounded whitespace-nowrap">
                                 {item.marca}
                               </span>
-                              <span className="text-sm text-notion-text-primary truncate">
-                                {item.nombre_producto || item.sku}
-                              </span>
+                              <code className="text-sm text-reluvsa-red font-mono font-semibold">
+                                {item.sku}
+                              </code>
                             </div>
                             <span className={cn(
                               "text-xs font-medium whitespace-nowrap ml-3",
