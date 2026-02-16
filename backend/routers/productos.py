@@ -2,6 +2,7 @@
 Endpoints para productos
 """
 import json
+import sqlite3
 from typing import Optional, List
 from fastapi import APIRouter, Query, HTTPException, Depends
 import math
@@ -45,7 +46,7 @@ def listar_productos(
     capacidad_cca: Optional[str] = Query(None, description="Capacidad CCA"),
     tamano_acumulador: Optional[str] = Query(None, description="Tamaño del acumulador"),
     # Búsqueda
-    q: Optional[str] = Query(None, description="Búsqueda por texto"),
+    q: Optional[str] = Query(None, max_length=200, description="Búsqueda por texto"),
     # Filtro de productos nuevos
     solo_nuevos: bool = Query(False, description="Solo productos nuevos (últimos 60 días)"),
     # Paginación
@@ -486,7 +487,7 @@ def get_producto(sku: str):
         if row['skus_alternos']:
             try:
                 skus_alternos = json.loads(row['skus_alternos'])
-            except:
+            except (json.JSONDecodeError, ValueError, TypeError):
                 pass
 
         # Obtener compatibilidades
@@ -555,7 +556,7 @@ def get_producto(sku: str):
                     'marca': i_row['marca'],
                     'inventario_total': i_row['inventario_total']
                 })
-        except Exception:
+        except sqlite3.OperationalError:
             pass  # Tabla puede no existir aun
 
         return {

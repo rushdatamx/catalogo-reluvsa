@@ -38,6 +38,17 @@ def main():
     print("=" * 70)
 
     conn = get_db()
+    try:
+        _ejecutar_calculo(conn)
+    finally:
+        conn.close()
+
+    print(f"\n{'='*70}")
+    print("CALCULO COMPLETADO")
+    print(f"{'='*70}")
+
+
+def _ejecutar_calculo(conn):
     cursor = conn.cursor()
 
     # Crear tabla si no existe
@@ -99,7 +110,7 @@ def main():
         for alt in alternos:
             if alt and isinstance(alt, str):
                 norm = normalizar_sku(alt)
-                if norm and len(norm) >= 3:  # Ignorar SKUs muy cortos
+                if norm and len(norm) >= 2:  # Ignorar SKUs de 1 caracter
                     alternos_norm.add(norm)
                     sku_alterno_a_ids[norm].add(prod_id)
 
@@ -216,11 +227,6 @@ def main():
         """, (ejemplo['sku'],))
         for row in cursor.fetchall():
             print(f"  -> [{row['marca']}] {row['sku']}: {row['nombre_producto']}")
-
-    conn.close()
-    print(f"\n{'='*70}")
-    print("CALCULO COMPLETADO")
-    print(f"{'='*70}")
 
 
 if __name__ == "__main__":

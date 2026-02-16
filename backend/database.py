@@ -67,8 +67,10 @@ ensure_database()
 
 def get_connection():
     """Obtiene una conexión a la base de datos"""
-    conn = sqlite3.connect(DATABASE_PATH)
+    conn = sqlite3.connect(DATABASE_PATH, timeout=5.0)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
 
@@ -197,7 +199,7 @@ def init_database():
         # Columna grupo_producto (ALTER TABLE idempotente)
         try:
             cursor.execute("ALTER TABLE productos ADD COLUMN grupo_producto TEXT")
-        except Exception:
+        except sqlite3.OperationalError:
             pass  # columna ya existe
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_productos_grupo ON productos(grupo_producto)")
 

@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // Usar variable de entorno para producción o localhost para desarrollo
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+export const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -61,7 +61,7 @@ export const getFiltros = {
 
 // Productos
 export const getProductos = (params) => api.get('/productos', { params });
-export const getProducto = (sku) => api.get(`/productos/${encodeURIComponent(sku)}`);
+export const getProducto = (sku, config = {}) => api.get(`/productos/${encodeURIComponent(sku)}`, config);
 export const buscarProductos = (q, limit = 20) => api.get('/productos/buscar', { params: { q, limit } });
 
 // Especificaciones manuales

@@ -3,18 +3,24 @@ Router de autenticación JWT para el catálogo RELUVSA.
 
 Provee login simple con 2 usuarios (admin/visitante) desde variables de entorno.
 """
+import os
+import secrets
+import hmac
+
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from jose import jwt, JWTError
-from datetime import datetime, timedelta
-import os
+from datetime import datetime, timedelta, timezone
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 security = HTTPBearer()
 
-# Configuración JWT
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-key-cambiar-en-produccion")
+# Configuración JWT - genera clave segura si no hay variable de entorno
+_default_secret = secrets.token_urlsafe(64)
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", _default_secret)
+if not os.getenv("JWT_SECRET_KEY"):
+    print("ADVERTENCIA: JWT_SECRET_KEY no configurada. Usando clave temporal (tokens no sobrevivirán reinicios).")
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_HOURS = 24
 
@@ -51,11 +57,11 @@ class UserInfo(BaseModel):
 def login(data: LoginRequest):
     """Endpoint de login que retorna JWT."""
     user = USERS.get(data.username)
-    if not user or user["password"] != data.password:
+    if not user or not hmac.compare_digest(user["password"], data.password):
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
 
     # Crear JWT
-    expire = datetime.utcnow() + timedelta(hours=TOKEN_EXPIRE_HOURS)
+    expire = datetime.now(timezone.utc) + timedelta(hours=TOKEN_EXPIRE_HOURS)
     payload = {
         "sub": data.username,
         "role": user["role"],

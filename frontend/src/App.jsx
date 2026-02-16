@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, Package, Car, Link2, Filter, X, ChevronDown, CheckCircle, XCircle, AlertCircle, Tag, Calendar, Gauge, Truck, Settings, Save, LogOut, User, ImageOff } from 'lucide-react';
-import { getProductos, getStats, getProducto, actualizarEspecificacionesManuales } from './services/api';
+import { getProductos, getStats, getProducto, actualizarEspecificacionesManuales, API_BASE } from './services/api';
 import { cn } from './lib/utils';
 
 // URL base para imágenes via proxy
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 const getImageUrl = (sku) => `${API_BASE}/images/${encodeURIComponent(sku)}`;
 
 // Componente de imagen de producto con fallback
@@ -113,6 +112,21 @@ function AppContent() {
   });
   const [guardandoEspecs, setGuardandoEspecs] = useState(false);
   const [especsGuardadas, setEspecsGuardadas] = useState(false);
+  const [errorEspecs, setErrorEspecs] = useState(null);
+
+  // Ref para AbortController del detalle de producto
+  const detalleAbortRef = useRef(null);
+
+  // Cerrar modal con ESC
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && productoSeleccionado) {
+        setProductoSeleccionado(null);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [productoSeleccionado]);
 
   // Cargar estadísticas
   useEffect(() => {
@@ -158,44 +172,67 @@ function AppContent() {
     setPaginacion(prev => ({ ...prev, page: 1 }));
   }, [filtros, busqueda]);
 
-  // Cargar detalle de producto
+  // Cargar detalle de producto (con AbortController para evitar race conditions)
   useEffect(() => {
     if (productoSeleccionado) {
+      // Cancelar petición anterior si existe
+      if (detalleAbortRef.current) {
+        detalleAbortRef.current.abort();
+      }
+      const controller = new AbortController();
+      detalleAbortRef.current = controller;
+
       setLoadingDetalle(true);
       setEspecsGuardadas(false);
-      getProducto(productoSeleccionado)
+      getProducto(productoSeleccionado, { signal: controller.signal })
         .then(res => {
-          setDetalleProducto(res.data);
-          // Cargar especificaciones manuales existentes
-          if (res.data.especificaciones_manuales) {
-            setEspecsManuales({
-              garantia: res.data.especificaciones_manuales.garantia || '',
-              material: res.data.especificaciones_manuales.material || '',
-              posicion: res.data.especificaciones_manuales.posicion || ''
-            });
-          } else {
-            setEspecsManuales({ garantia: '', material: '', posicion: '' });
+          if (!controller.signal.aborted) {
+            setDetalleProducto(res.data);
+            if (res.data.especificaciones_manuales) {
+              setEspecsManuales({
+                garantia: res.data.especificaciones_manuales.garantia || '',
+                material: res.data.especificaciones_manuales.material || '',
+                posicion: res.data.especificaciones_manuales.posicion || ''
+              });
+            } else {
+              setEspecsManuales({ garantia: '', material: '', posicion: '' });
+            }
           }
         })
-        .catch(console.error)
-        .finally(() => setLoadingDetalle(false));
+        .catch(err => {
+          if (err.name !== 'CanceledError' && err.code !== 'ERR_CANCELED') {
+            console.error('Error cargando detalle:', err);
+          }
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) {
+            setLoadingDetalle(false);
+          }
+        });
     } else {
       setDetalleProducto(null);
       setEspecsManuales({ garantia: '', material: '', posicion: '' });
     }
+    return () => {
+      if (detalleAbortRef.current) {
+        detalleAbortRef.current.abort();
+      }
+    };
   }, [productoSeleccionado]);
 
   // Guardar especificaciones manuales
   const handleGuardarEspecs = async () => {
     setGuardandoEspecs(true);
     setEspecsGuardadas(false);
+    setErrorEspecs(null);
     try {
       await actualizarEspecificacionesManuales(productoSeleccionado, especsManuales);
       setEspecsGuardadas(true);
       setTimeout(() => setEspecsGuardadas(false), 3000);
     } catch (err) {
       console.error('Error guardando especificaciones:', err);
-      alert('Error al guardar las especificaciones');
+      setErrorEspecs('Error al guardar las especificaciones');
+      setTimeout(() => setErrorEspecs(null), 5000);
     } finally {
       setGuardandoEspecs(false);
     }
@@ -426,6 +463,9 @@ function AppContent() {
           onClick={() => setProductoSeleccionado(null)}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Detalle de producto"
             className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}
           >
@@ -620,34 +660,42 @@ function AppContent() {
                         </div>
                       </div>
                       {/* Botón Guardar */}
-                      <button
-                        onClick={handleGuardarEspecs}
-                        disabled={guardandoEspecs}
-                        className={cn(
-                          "mt-3 flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
-                          especsGuardadas
-                            ? "bg-success text-white"
-                            : "bg-reluvsa-yellow text-reluvsa-black hover:bg-yellow-400",
-                          "disabled:opacity-50 disabled:cursor-not-allowed"
+                      <div className="flex items-center gap-3 mt-3">
+                        <button
+                          onClick={handleGuardarEspecs}
+                          disabled={guardandoEspecs}
+                          className={cn(
+                            "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
+                            especsGuardadas
+                              ? "bg-success text-white"
+                              : "bg-reluvsa-yellow text-reluvsa-black hover:bg-yellow-400",
+                            "disabled:opacity-50 disabled:cursor-not-allowed"
+                          )}
+                        >
+                          {guardandoEspecs ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-reluvsa-black border-t-transparent rounded-full animate-spin"></div>
+                              Guardando...
+                            </>
+                          ) : especsGuardadas ? (
+                            <>
+                              <CheckCircle size={16} />
+                              Guardado
+                            </>
+                          ) : (
+                            <>
+                              <Save size={16} />
+                              Guardar Especificaciones
+                            </>
+                          )}
+                        </button>
+                        {errorEspecs && (
+                          <span className="text-sm text-danger flex items-center gap-1">
+                            <AlertCircle size={14} />
+                            {errorEspecs}
+                          </span>
                         )}
-                      >
-                        {guardandoEspecs ? (
-                          <>
-                            <div className="w-4 h-4 border-2 border-reluvsa-black border-t-transparent rounded-full animate-spin"></div>
-                            Guardando...
-                          </>
-                        ) : especsGuardadas ? (
-                          <>
-                            <CheckCircle size={16} />
-                            Guardado
-                          </>
-                        ) : (
-                          <>
-                            <Save size={16} />
-                            Guardar Especificaciones
-                          </>
-                        )}
-                      </button>
+                      </div>
                     </div>
                   )}
                 </div>

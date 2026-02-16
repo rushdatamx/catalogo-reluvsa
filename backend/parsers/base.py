@@ -33,10 +33,9 @@ class BaseParser:
 
     # Patrones regex comunes
     PATRON_AÑOS = re.compile(r'(\d{2,4})[/-](\d{2,4})')
-    PATRON_AÑO_INCOMPLETO = re.compile(r'(\d{2})/\s*$')  # Año incompleto al final: "72/"
     PATRON_AÑO_SOLO = re.compile(r'\b(19[5-9]\d|20[0-3]\d)\b')  # Año solo: 1950-2039
     PATRON_MOTOR = re.compile(r'(\d+\.?\d*)\s*[Ll](?:T|ITROS?)?', re.IGNORECASE)
-    PATRON_CILINDRADA = re.compile(r'(\d{3})\s*(?:CID|CI|C\.I\.)?', re.IGNORECASE)
+    PATRON_CILINDRADA = re.compile(r'(\d{3})\s*(?:CID|CI|C\.I\.)', re.IGNORECASE)
     PATRON_CILINDROS = re.compile(r'(V\d+|L\d+|\d+\s*CIL(?:INDROS?)?)', re.IGNORECASE)
     PATRON_SPEC = re.compile(r'(DOHC|SOHC|OHV|TBI|VORTEC|MPFI|EFI|16V|8V|12V|24V)', re.IGNORECASE)
     PATRON_SKUS = re.compile(r'^([A-Z0-9\-]+(?:/[A-Z0-9\-]+)+)\s+', re.IGNORECASE)

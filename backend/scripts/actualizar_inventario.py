@@ -111,8 +111,17 @@ def actualizar_inventario(csv_path: str, db_path: str = None):
 
     skus_en_csv_norm = set()
 
-    # Leer y procesar CSV
-    with open(csv_path, 'r', encoding='utf-8') as f:
+    # Leer y procesar CSV (con fallback de encoding para CSVs de Excel)
+    try:
+        f = open(csv_path, 'r', encoding='utf-8')
+        f.readline()  # Test read
+        f.seek(0)
+    except UnicodeDecodeError:
+        f.close()
+        print("Encoding UTF-8 falló, usando Latin-1...")
+        f = open(csv_path, 'r', encoding='latin-1')
+
+    with f:
         reader = csv.reader(f)
         header = next(reader)  # Skip header
 
