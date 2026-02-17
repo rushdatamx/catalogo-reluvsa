@@ -38,7 +38,12 @@ class BaseParser:
     PATRON_CILINDRADA = re.compile(r'(\d{3})\s*(?:CID|CI|C\.I\.)', re.IGNORECASE)
     PATRON_CILINDROS = re.compile(r'(V\d+|L\d+|\d+\s*CIL(?:INDROS?)?)', re.IGNORECASE)
     PATRON_SPEC = re.compile(r'(DOHC|SOHC|OHV|TBI|VORTEC|MPFI|EFI|16V|8V|12V|24V)', re.IGNORECASE)
-    PATRON_SKUS = re.compile(r'^([A-Z0-9\-]+(?:/[A-Z0-9\-]+)+)\s+', re.IGNORECASE)
+    PATRON_SKUS = re.compile(r'^([A-Z0-9.\-()]+(?:/[A-Z0-9.\-()]*)+)\s+', re.IGNORECASE)
+    # Fallback: SKU base seguido de espacio y luego IT/ARE con más SKUs separados por /
+    PATRON_SKUS_ESPACIO = re.compile(
+        r'^(\S+)\s+(?:IT|ARE)(/[A-Z0-9.\-()]+(?:/[A-Z0-9.\-()]*)*)\s+',
+        re.IGNORECASE
+    )
 
     # Falsos positivos - modelos que no son realmente modelos de vehículo
     FALSOS_POSITIVOS_MODELOS = {
@@ -587,6 +592,13 @@ class BaseParser:
         if match:
             skus_str = match.group(1)
             return [sku.strip() for sku in skus_str.split('/') if sku.strip()]
+        # Fallback: patrón "SKU IT/SKU2/SKU3" o "SKU ARE/SKU2/SKU3"
+        match2 = self.PATRON_SKUS_ESPACIO.match(descripcion)
+        if match2:
+            base = match2.group(1).strip()
+            resto = match2.group(2)  # "/IT-CODE/ARE-CODE/..."
+            partes = [sku.strip() for sku in resto.split('/') if sku.strip()]
+            return [base] + partes
         return []
 
     def extraer_tipo_producto(self, descripcion: str) -> str:
@@ -603,6 +615,10 @@ class BaseParser:
         match = self.PATRON_SKUS.match(descripcion)
         if match:
             descripcion = descripcion[match.end():]
+        else:
+            match2 = self.PATRON_SKUS_ESPACIO.match(descripcion)
+            if match2:
+                descripcion = descripcion[match2.end():]
 
         # Buscar hasta el primer modelo/marca de vehículo o año
         # El nombre suele estar entre los SKUs y las compatibilidades
