@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from database import get_db
 from models import ProductoLista, ProductoDetalle, PaginatedResponse, Compatibilidad, InventarioSucursal, EspecificacionesManualRequest, EspecificacionesManuales
 from utils.busqueda_inteligente import analizar_busqueda, STOP_WORDS
+from utils.sinonimos import expandir_sinonimos
 from routers.auth import require_admin
 
 router = APIRouter(prefix="/api/productos", tags=["productos"])
@@ -149,40 +150,40 @@ def listar_productos(
                 # Filtro por producto (solo si es búsqueda combinada)
                 if analisis["tipo"] == "combinada":
                     palabras_producto = analisis['producto'].split()
-                    if len(palabras_producto) == 1:
-                        # Una palabra: buscar en los 4 campos
-                        search_prod = f"%{palabras_producto[0]}%"
-                        where_clauses.append("""
-                            (p.nombre_producto LIKE ?
-                             OR p.grupo_producto LIKE ?
-                             OR p.tipo_producto LIKE ?
-                             OR p.descripcion_original LIKE ?)
-                        """)
-                        params.extend([search_prod] * 4)
-                    else:
-                        # Múltiples palabras: cada una debe aparecer (AND)
-                        # independientemente del orden
-                        condiciones_palabras = []
-                        for palabra in palabras_producto:
-                            term = f"%{palabra}%"
-                            condiciones_palabras.append("""
+                    # Expandir sinónimos
+                    grupos_sin = expandir_sinonimos(palabras_producto)
+
+                    condiciones_grupos = []
+                    for grupo in grupos_sin:
+                        # Cada grupo de sinónimos va con OR entre sí
+                        or_parts = []
+                        for termino in grupo:
+                            term = f"%{termino}%"
+                            or_parts.append("""
                                 (p.nombre_producto LIKE ?
                                  OR p.grupo_producto LIKE ?
                                  OR p.tipo_producto LIKE ?
                                  OR p.descripcion_original LIKE ?)
                             """)
                             params.extend([term] * 4)
-                        where_clauses.append(f"({' AND '.join(condiciones_palabras)})")
+                        condiciones_grupos.append(f"({' OR '.join(or_parts)})")
+
+                    # AND entre distintos grupos de sinónimos
+                    if condiciones_grupos:
+                        where_clauses.append(f"({' AND '.join(condiciones_grupos)})")
 
             else:
-                # BÚSQUEDA SIMPLE MEJORADA: soporta múltiples palabras con AND
+                # BÚSQUEDA SIMPLE MEJORADA: soporta múltiples palabras con AND + sinónimos
                 # Filtrar stop words (preposiciones, artículos)
-                palabras = [p for p in q.strip().split() if p.lower() not in STOP_WORDS]
+                palabras = [p.lower() for p in q.strip().split() if p.lower() not in STOP_WORDS]
                 if not palabras:
-                    palabras = q.strip().split()  # Fallback: usar todas si solo quedan stop words
+                    palabras = [p.lower() for p in q.strip().split()]  # Fallback
 
-                if len(palabras) == 1:
-                    # Una sola palabra: comportamiento original (busca en todos los campos)
+                # Expandir sinónimos
+                grupos_sin = expandir_sinonimos(palabras)
+
+                if len(grupos_sin) == 1 and len(grupos_sin[0]) == 1:
+                    # Una sola palabra sin sinónimos: comportamiento original
                     search_term = f"%{q}%"
                     where_clauses.append("""
                         (
@@ -201,26 +202,40 @@ def listar_productos(
                             )
                         )
                     """)
-                    # 7 campos de productos + 3 de compatibilidades = 10 parámetros
                     params.extend([search_term] * 10)
                 else:
-                    # Múltiples palabras: AND entre todas
-                    # Cada palabra debe aparecer en AL MENOS UN campo del producto
-                    palabra_conditions = []
-                    for palabra in palabras:
-                        term = f"%{palabra}%"
-                        palabra_conditions.append("""
-                            (p.descripcion_original LIKE ?
-                             OR p.sku LIKE ?
-                             OR p.nombre_producto LIKE ?
-                             OR p.skus_alternos LIKE ?
-                             OR p.marca LIKE ?
-                             OR p.tipo_producto LIKE ?)
-                        """)
-                        params.extend([term] * 6)
+                    # Múltiples palabras o palabras con sinónimos
+                    condiciones_grupos = []
+                    for grupo in grupos_sin:
+                        or_parts = []
+                        for termino in grupo:
+                            term = f"%{termino}%"
+                            # Sinónimos solo buscan en 4 campos de producto
+                            or_parts.append("""
+                                (p.nombre_producto LIKE ?
+                                 OR p.tipo_producto LIKE ?
+                                 OR p.descripcion_original LIKE ?
+                                 OR p.grupo_producto LIKE ?)
+                            """)
+                            params.extend([term] * 4)
 
-                    # Unir con AND: todas las palabras deben estar presentes
-                    where_clauses.append(f"({' AND '.join(palabra_conditions)})")
+                        # El término original también busca en campos extra
+                        # (sku, marca, etc.) para no perder funcionalidad
+                        palabras_originales = [t for t in grupo
+                                               if t in palabras or t in q.lower()]
+                        for orig in palabras_originales:
+                            orig_term = f"%{orig}%"
+                            or_parts.append("""
+                                (p.sku LIKE ?
+                                 OR p.skus_alternos LIKE ?
+                                 OR p.marca LIKE ?
+                                 OR p.departamento LIKE ?)
+                            """)
+                            params.extend([orig_term] * 4)
+
+                        condiciones_grupos.append(f"({' OR '.join(or_parts)})")
+
+                    where_clauses.append(f"({' AND '.join(condiciones_grupos)})")
 
         # Filtros para LLANTAS (usando subqueries para múltiples características)
         if ancho_llanta:
@@ -386,34 +401,79 @@ def buscar_productos(
     q: str = Query(..., min_length=2, description="Término de búsqueda"),
     limit: int = Query(20, ge=1, le=50)
 ):
-    """Búsqueda rápida de productos - busca en TODOS los campos posibles"""
+    """Búsqueda rápida de productos - busca en TODOS los campos posibles, con sinónimos"""
     with get_db() as conn:
         cursor = conn.cursor()
 
-        search_term = f"%{q}%"
-        # Búsqueda súper flexible - igual que el endpoint principal
-        cursor.execute("""
+        # Filtrar stop words y expandir sinónimos
+        palabras = [p.lower() for p in q.strip().split() if p.lower() not in STOP_WORDS]
+        if not palabras:
+            palabras = [p.lower() for p in q.strip().split()]
+
+        grupos_sin = expandir_sinonimos(palabras)
+
+        if len(grupos_sin) == 1 and len(grupos_sin[0]) == 1:
+            # Sin sinónimos: comportamiento original
+            search_term = f"%{q}%"
+            where_sql = """
+                WHERE p.descripcion_original LIKE ?
+                   OR p.sku LIKE ?
+                   OR p.nombre_producto LIKE ?
+                   OR p.skus_alternos LIKE ?
+                   OR p.marca LIKE ?
+                   OR p.departamento LIKE ?
+                   OR p.tipo_producto LIKE ?
+                   OR p.id IN (
+                       SELECT producto_id FROM compatibilidades
+                       WHERE marca_vehiculo LIKE ?
+                          OR modelo_vehiculo LIKE ?
+                          OR motor LIKE ?
+                   )
+            """
+            where_params = [search_term] * 10
+        else:
+            # Con sinónimos: expandir búsqueda
+            condiciones_grupos = []
+            where_params = []
+            for grupo in grupos_sin:
+                or_parts = []
+                for termino in grupo:
+                    term = f"%{termino}%"
+                    or_parts.append("""
+                        (p.nombre_producto LIKE ?
+                         OR p.tipo_producto LIKE ?
+                         OR p.descripcion_original LIKE ?
+                         OR p.grupo_producto LIKE ?)
+                    """)
+                    where_params.extend([term] * 4)
+
+                # El término original también busca en campos extra
+                palabras_originales = [t for t in grupo
+                                       if t in palabras or t in q.lower()]
+                for orig in palabras_originales:
+                    orig_term = f"%{orig}%"
+                    or_parts.append("""
+                        (p.sku LIKE ?
+                         OR p.skus_alternos LIKE ?
+                         OR p.marca LIKE ?
+                         OR p.departamento LIKE ?)
+                    """)
+                    where_params.extend([orig_term] * 4)
+
+                condiciones_grupos.append(f"({' OR '.join(or_parts)})")
+
+            where_sql = f"WHERE {' AND '.join(condiciones_grupos)}"
+
+        cursor.execute(f"""
             SELECT DISTINCT
                 p.id, p.sku, p.marca, p.descripcion_original,
                 p.nombre_producto, p.precio_publico, p.inventario_total,
                 p.departamento, p.tipo_producto
             FROM productos p
-            WHERE p.descripcion_original LIKE ?
-               OR p.sku LIKE ?
-               OR p.nombre_producto LIKE ?
-               OR p.skus_alternos LIKE ?
-               OR p.marca LIKE ?
-               OR p.departamento LIKE ?
-               OR p.tipo_producto LIKE ?
-               OR p.id IN (
-                   SELECT producto_id FROM compatibilidades
-                   WHERE marca_vehiculo LIKE ?
-                      OR modelo_vehiculo LIKE ?
-                      OR motor LIKE ?
-               )
+            {where_sql}
             ORDER BY p.inventario_total DESC
             LIMIT ?
-        """, [search_term] * 10 + [limit])
+        """, where_params + [limit])
 
         results = []
         for row in cursor.fetchall():
