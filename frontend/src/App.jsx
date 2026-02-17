@@ -605,12 +605,17 @@ function AppContent() {
                                 {item.sku}
                               </code>
                             </div>
-                            <span className={cn(
-                              "text-xs font-medium whitespace-nowrap ml-3",
-                              item.inventario_total > 0 ? "text-success" : "text-notion-text-secondary"
-                            )}>
-                              {item.inventario_total > 0 ? `${item.inventario_total} en stock` : 'Sin stock'}
-                            </span>
+                            <div className="flex items-center gap-3 ml-3 whitespace-nowrap">
+                              <span className="text-sm font-bold text-reluvsa-red">
+                                ${item.precio_publico?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) || '0.00'}
+                              </span>
+                              <span className={cn(
+                                "text-xs font-medium",
+                                item.inventario_total > 0 ? "text-success" : "text-notion-text-secondary"
+                              )}>
+                                {item.inventario_total > 0 ? `${item.inventario_total} en stock` : 'Sin stock'}
+                              </span>
+                            </div>
                           </div>
                         ))}
                       </div>

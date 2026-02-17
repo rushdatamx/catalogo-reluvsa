@@ -562,7 +562,7 @@ def get_producto(sku: str):
         intercambiables = []
         try:
             cursor.execute("""
-                SELECT p.sku, p.nombre_producto, p.marca, p.inventario_total
+                SELECT p.sku, p.nombre_producto, p.marca, p.inventario_total, p.precio_publico
                 FROM productos_intercambiables pi
                 INNER JOIN productos p ON p.id = pi.producto_intercambiable_id
                 WHERE pi.producto_id = ?
@@ -574,7 +574,8 @@ def get_producto(sku: str):
                     'sku': i_row['sku'],
                     'nombre_producto': i_row['nombre_producto'],
                     'marca': i_row['marca'],
-                    'inventario_total': i_row['inventario_total']
+                    'inventario_total': i_row['inventario_total'],
+                    'precio_publico': i_row['precio_publico']
                 })
         except sqlite3.OperationalError:
             pass  # Tabla puede no existir aun
