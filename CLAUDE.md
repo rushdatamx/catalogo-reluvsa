@@ -15,6 +15,7 @@ catalogo-reluvsa/
 │   ├── routers/
 │   │   ├── productos.py    # GET /api/productos, /buscar, /{sku}
 │   │   ├── filtros.py      # Endpoints de filtros en cascada
+│   │   ├── exportar.py     # Exportar Excel/PDF con imágenes
 │   │   ├── auth.py         # Autenticación JWT (login, roles)
 │   │   └── images.py       # Proxy de imágenes (HTTPS→HTTP)
 │   ├── parsers/            # 82 parsers de marcas
@@ -58,7 +59,7 @@ catalogo-reluvsa/
 
 ## Stack Tecnológico
 
-- **Backend**: Python 3.x + FastAPI + SQLite + httpx (async HTTP client)
+- **Backend**: Python 3.x + FastAPI + SQLite + httpx (async HTTP client) + openpyxl + reportlab + Pillow
 - **Frontend**: React 18 + Tailwind CSS + Lucide Icons
 - **Base de datos**: SQLite (archivo local, se copia a Railway en deploy)
 - **Parsers**: 82 marcas con extracción específica
@@ -252,6 +253,14 @@ GET /api/images/{sku}
     # Proxy para cargar imágenes HTTP vía HTTPS
     # Cache: 24 horas | Timeout: 10s
 
+# Exportar (con imágenes embebidas)
+GET /api/exportar/excel?[mismos filtros que /api/productos]
+    # Genera Excel (.xlsx) con thumbnails 75x75, compatibilidades, intercambiables
+    # Máx 500 productos | Timeout imagen: 5s | Concurrencia: 10
+GET /api/exportar/pdf?[mismos filtros que /api/productos]
+    # Genera PDF landscape con thumbnails 50x50, filas alternadas
+    # Compatibilidades/intercambiables: máx 5 + "... y X más"
+
 # Autenticación
 POST /api/auth/login
     # Body: { username, password }
@@ -262,6 +271,7 @@ POST /api/auth/login
 
 ### App.jsx (Componente Principal)
 - Estado de filtros con 19 campos
+- **Botones Exportar Excel/PDF** en header de resultados (visibles cuando hay productos)
 - Modal de detalle de producto **inline** (NO usa DetalleProducto.jsx)
 - Secciones del modal:
   1. Header con imagen, SKU, marca, precio
@@ -603,8 +613,9 @@ Se activan por MARCA (CHECKER, EXTREMA, CAMEL), no por departamento.
 
 1. ~~**Imágenes**: Implementar carga/display de imágenes de productos~~ ✅ Implementado (proxy HTTPS)
 2. **Carrito**: Agregar funcionalidad de cotización/carrito
-3. **Exportación**: PDF/Excel de búsquedas
+3. ~~**Exportación**: PDF/Excel de búsquedas~~ ✅ Implementado (Excel + PDF con imágenes embebidas)
 4. ~~**Usuarios**: Sistema de login para empleados~~ ✅ Implementado (JWT básico)
 5. **Analytics**: Tracking de búsquedas más comunes
 6. **Búsqueda avanzada**: Autocompletado, sugerencias
 7. **Mejora de imágenes**: Solicitar a RELUVSA actualizar imágenes faltantes (~81%)
+8. **Tags de producto**: Categorización adicional por tags (pendiente recibir Excel del cliente)
