@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from database import get_db
 from models import ProductoLista, ProductoDetalle, PaginatedResponse, Compatibilidad, InventarioSucursal, EspecificacionesManualRequest, EspecificacionesManuales
-from utils.busqueda_inteligente import analizar_busqueda
+from utils.busqueda_inteligente import analizar_busqueda, STOP_WORDS
 from routers.auth import require_admin
 
 router = APIRouter(prefix="/api/productos", tags=["productos"])
@@ -148,18 +148,38 @@ def listar_productos(
 
                 # Filtro por producto (solo si es búsqueda combinada)
                 if analisis["tipo"] == "combinada":
-                    search_prod = f"%{analisis['producto']}%"
-                    where_clauses.append("""
-                        (p.nombre_producto LIKE ?
-                         OR p.grupo_producto LIKE ?
-                         OR p.tipo_producto LIKE ?
-                         OR p.descripcion_original LIKE ?)
-                    """)
-                    params.extend([search_prod] * 4)
+                    palabras_producto = analisis['producto'].split()
+                    if len(palabras_producto) == 1:
+                        # Una palabra: buscar en los 4 campos
+                        search_prod = f"%{palabras_producto[0]}%"
+                        where_clauses.append("""
+                            (p.nombre_producto LIKE ?
+                             OR p.grupo_producto LIKE ?
+                             OR p.tipo_producto LIKE ?
+                             OR p.descripcion_original LIKE ?)
+                        """)
+                        params.extend([search_prod] * 4)
+                    else:
+                        # Múltiples palabras: cada una debe aparecer (AND)
+                        # independientemente del orden
+                        condiciones_palabras = []
+                        for palabra in palabras_producto:
+                            term = f"%{palabra}%"
+                            condiciones_palabras.append("""
+                                (p.nombre_producto LIKE ?
+                                 OR p.grupo_producto LIKE ?
+                                 OR p.tipo_producto LIKE ?
+                                 OR p.descripcion_original LIKE ?)
+                            """)
+                            params.extend([term] * 4)
+                        where_clauses.append(f"({' AND '.join(condiciones_palabras)})")
 
             else:
                 # BÚSQUEDA SIMPLE MEJORADA: soporta múltiples palabras con AND
-                palabras = q.strip().split()
+                # Filtrar stop words (preposiciones, artículos)
+                palabras = [p for p in q.strip().split() if p.lower() not in STOP_WORDS]
+                if not palabras:
+                    palabras = q.strip().split()  # Fallback: usar todas si solo quedan stop words
 
                 if len(palabras) == 1:
                     # Una sola palabra: comportamiento original (busca en todos los campos)

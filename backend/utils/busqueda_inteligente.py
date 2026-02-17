@@ -21,6 +21,14 @@ from typing import Optional, Set, Dict, Any
 MODELOS_VEHICULO: Set[str] = set()
 MARCAS_VEHICULO: Set[str] = set()
 
+# Stop words: preposiciones, artículos y conectores que no aportan a la búsqueda
+STOP_WORDS = {
+    'de', 'del', 'la', 'el', 'los', 'las', 'un', 'una', 'unos', 'unas',
+    'para', 'con', 'sin', 'en', 'por', 'al', 'a',
+    'y', 'o', 'e', 'u', 'ni',
+    'se', 'su', 'sus', 'que', 'es',
+}
+
 # Flag para saber si ya se cargó el vocabulario
 _vocabulario_cargado = False
 
@@ -117,7 +125,8 @@ def analizar_busqueda(query: str) -> Dict[str, Any]:
             # Solo asignar marca si no se encontró modelo
             termino_vehiculo = t
             tipo_vehiculo = "marca"
-        else:
+        elif t not in STOP_WORDS:
+            # Solo agregar si no es stop word
             terminos_producto.append(t)
 
     # Caso 1: Solo vehículo (ej: "aveo", "aveo 2015")
