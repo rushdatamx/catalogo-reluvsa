@@ -68,6 +68,14 @@ export const buscarProductos = (q, limit = 20) => api.get('/productos/buscar', {
 export const actualizarEspecificacionesManuales = (sku, datos) =>
   api.put(`/productos/${encodeURIComponent(sku)}/especificaciones-manuales`, datos);
 
+// Exportar
+export const exportarExcel = (params) => api.get('/exportar/excel', {
+  params, responseType: 'blob', timeout: 60000
+});
+export const exportarPDF = (params) => api.get('/exportar/pdf', {
+  params, responseType: 'blob', timeout: 60000
+});
+
 // Stats
 export const getStats = () => api.get('/stats');
 

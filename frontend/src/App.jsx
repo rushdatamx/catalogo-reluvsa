@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, Package, Car, Link2, Filter, X, ChevronDown, CheckCircle, XCircle, AlertCircle, Tag, Calendar, Gauge, Truck, Settings, Save, LogOut, User, ImageOff } from 'lucide-react';
-import { getProductos, getStats, getProducto, actualizarEspecificacionesManuales, API_BASE } from './services/api';
+import { Search, Package, Car, Link2, Filter, X, ChevronDown, CheckCircle, XCircle, AlertCircle, Tag, Calendar, Gauge, Truck, Settings, Save, LogOut, User, ImageOff, FileSpreadsheet, FileText, Download, Loader2 } from 'lucide-react';
+import { getProductos, getStats, getProducto, actualizarEspecificacionesManuales, exportarExcel, exportarPDF, API_BASE } from './services/api';
 import { cn } from './lib/utils';
 
 // URL base para imágenes via proxy
@@ -103,6 +103,7 @@ function AppContent() {
   const [detalleProducto, setDetalleProducto] = useState(null);
   const [loadingDetalle, setLoadingDetalle] = useState(false);
   const [stats, setStats] = useState(null);
+  const [exportando, setExportando] = useState(null); // null | 'excel' | 'pdf'
 
   // Estados para especificaciones manuales
   const [especsManuales, setEspecsManuales] = useState({
@@ -242,6 +243,64 @@ function AppContent() {
     setFiltros(nuevosFiltros);
   };
 
+  // Export helpers
+  const buildExportParams = () => {
+    const params = {};
+    Object.entries(filtros).forEach(([key, value]) => {
+      if (value && value !== false) params[key] = value;
+    });
+    if (busqueda.length >= 2) params.q = busqueda;
+    return params;
+  };
+
+  const handleExportExcel = async () => {
+    setExportando('excel');
+    try {
+      const res = await exportarExcel(buildExportParams());
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'catalogo_reluvsa.xlsx');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      const msg = err.response?.status === 400
+        ? 'Demasiados productos. Aplique más filtros para exportar.'
+        : err.response?.status === 404
+          ? 'No se encontraron productos con los filtros aplicados.'
+          : 'Error al exportar. Intente de nuevo.';
+      alert(msg);
+    } finally {
+      setExportando(null);
+    }
+  };
+
+  const handleExportPDF = async () => {
+    setExportando('pdf');
+    try {
+      const res = await exportarPDF(buildExportParams());
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'catalogo_reluvsa.pdf');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      const msg = err.response?.status === 400
+        ? 'Demasiados productos. Aplique más filtros para exportar.'
+        : err.response?.status === 404
+          ? 'No se encontraron productos con los filtros aplicados.'
+          : 'Error al exportar. Intente de nuevo.';
+      alert(msg);
+    } finally {
+      setExportando(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-notion-bg-subtle">
       {/* Header */}
@@ -320,9 +379,39 @@ function AppContent() {
           <section className="flex-1">
             {/* Header de resultados */}
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-notion-text-primary">
-                Productos
-              </h2>
+              <div className="flex items-center gap-3">
+                <h2 className="text-lg font-semibold text-notion-text-primary">
+                  Productos
+                </h2>
+                {productos.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleExportExcel}
+                      disabled={exportando !== null}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {exportando === 'excel' ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <FileSpreadsheet size={14} />
+                      )}
+                      Excel
+                    </button>
+                    <button
+                      onClick={handleExportPDF}
+                      disabled={exportando !== null}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {exportando === 'pdf' ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <FileText size={14} />
+                      )}
+                      PDF
+                    </button>
+                  </div>
+                )}
+              </div>
               <span className="text-sm text-notion-text-secondary">
                 {paginacion.total.toLocaleString()} resultados
                 {paginacion.pages > 1 && ` · Página ${paginacion.page} de ${paginacion.pages}`}
