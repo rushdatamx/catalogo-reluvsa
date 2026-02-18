@@ -32,6 +32,7 @@ catalogo-reluvsa/
 │       ├── reprocesar_completo.py       # Reprocesa nombres + compatibilidades
 │       ├── reprocesar_compatibilidades.py
 │       ├── reprocesar_nombres.py
+│       ├── reprocesar_skus_alternos.py  # Re-extrae skus_alternos con regex mejorado
 │       ├── procesar_productos_nuevos.py # Procesa productos recién importados
 │       └── validar_*.py                 # Scripts de validación
 ├── frontend/               # React SPA
@@ -122,7 +123,7 @@ CREATE TABLE caracteristicas_producto (
     FOREIGN KEY (producto_id) REFERENCES productos(id) ON DELETE CASCADE
 );
 
--- Productos intercambiables (37,458 relaciones) - Precalculado
+-- Productos intercambiables (135,174 relaciones) - Precalculado
 CREATE TABLE productos_intercambiables (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     producto_id INTEGER NOT NULL,
@@ -319,9 +320,10 @@ Productos que comparten al menos un SKU (principal o alterno) son considerados i
 3. Almacena en tabla `productos_intercambiables`
 
 ### Estadísticas
-- **10,032 productos** tienen al menos 1 intercambiable
-- **37,458 relaciones** bidireccionales
-- **3.7 promedio** de intercambiables por producto
+- **7,336 productos** tienen al menos 1 intercambiable
+- **135,174 relaciones** bidireccionales
+- **18.4 promedio** de intercambiables por producto
+- **14,942 productos** con skus_alternos extraídos
 
 ### UI
 En el modal de detalle, sección "Productos Intercambiables":
@@ -368,6 +370,9 @@ python3 scripts/importar_grupos.py
 
 # Reprocesar nombres + compatibilidades (completo)
 python3 scripts/reprocesar_completo.py
+
+# Reprocesar skus_alternos (re-extrae con regex mejorado)
+python3 scripts/reprocesar_skus_alternos.py
 
 # Validaciones
 python3 scripts/validar_100_porciento.py
@@ -513,18 +518,19 @@ sqlite3 data/catalogo.db "SELECT COUNT(*) FROM productos"
 sqlite3 data/catalogo.db "SELECT COUNT(*) FROM productos_intercambiables"
 ```
 
-## Estadísticas del Catálogo (Enero 2026)
+## Estadísticas del Catálogo (Febrero 2026)
 
 | Métrica | Valor |
 |---------|-------|
-| Productos totales | 35,439 |
-| Compatibilidades vehiculares | 59,121 |
-| Características específicas | 4,299 |
-| Relaciones intercambiables | 37,458 |
-| Productos con intercambiables | 10,032 (28.3%) |
-| Grupos de producto únicos | 254 |
-| Productos con grupo | 35,249 (99.5%) |
-| Registros de inventario | 19,528 |
+| Productos totales | 22,178 |
+| Compatibilidades vehiculares | 29,168 |
+| Características específicas | 2,866 |
+| Productos con skus_alternos | 14,942 (67.4%) |
+| Relaciones intercambiables | 135,174 |
+| Productos con intercambiables | 7,336 (33.1%) |
+| Grupos de producto únicos | 248 |
+| Productos con grupo | 22,178 (100%) |
+| Registros de inventario | 19,873 |
 
 ## Deploy (Railway)
 
