@@ -482,9 +482,15 @@ function AppContent() {
 
                         {/* Precio inline con inventario */}
                         <div className="flex items-center gap-2">
-                          <span className="text-base font-bold text-reluvsa-red">
-                            ${producto.precio_publico?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) || '0.00'}
-                          </span>
+                          {producto.precio_publico > 0 ? (
+                            <span className="text-base font-bold text-reluvsa-red">
+                              ${producto.precio_publico.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                            </span>
+                          ) : (
+                            <span className="text-xs font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
+                              Consultar precio
+                            </span>
+                          )}
                           {producto.inventario_total > 0 ? (
                             <span className="flex items-center gap-1 text-xs font-medium text-success">
                               <CheckCircle size={10} />
@@ -612,17 +618,26 @@ function AppContent() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="bg-notion-bg-subtle p-4 rounded-lg">
                       <p className="text-sm text-notion-text-secondary mb-1">Precio Público</p>
-                      <p className="text-2xl font-bold text-reluvsa-red">
-                        ${detalleProducto.precio_publico?.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
-                      </p>
+                      {detalleProducto.precio_publico > 0 ? (
+                        <p className="text-2xl font-bold text-reluvsa-red">
+                          ${detalleProducto.precio_publico.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                        </p>
+                      ) : (
+                        <p className="text-lg font-medium text-amber-600">Consultar precio</p>
+                      )}
                     </div>
                     <div className="bg-notion-bg-subtle p-4 rounded-lg">
                       <p className="text-sm text-notion-text-secondary mb-1">Precio Mayoreo</p>
-                      <p className="text-2xl font-bold text-notion-text-primary">
-                        ${detalleProducto.precio_mayoreo?.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
-                      </p>
+                      {detalleProducto.precio_mayoreo > 0 ? (
+                        <p className="text-2xl font-bold text-notion-text-primary">
+                          ${detalleProducto.precio_mayoreo.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                        </p>
+                      ) : (
+                        <p className="text-lg font-medium text-amber-600">Consultar precio</p>
+                      )}
                     </div>
                   </div>
+                  <p className="text-xs text-notion-text-secondary mt-1">Precios incluyen IVA</p>
 
                   {/* Inventario */}
                   {detalleProducto.inventario_sucursales?.length > 0 && (
@@ -695,9 +710,15 @@ function AppContent() {
                               </code>
                             </div>
                             <div className="flex items-center gap-3 ml-3 whitespace-nowrap">
-                              <span className="text-sm font-bold text-reluvsa-red">
-                                ${item.precio_publico?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) || '0.00'}
-                              </span>
+                              {item.precio_publico > 0 ? (
+                                <span className="text-sm font-bold text-reluvsa-red">
+                                  ${item.precio_publico.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                                </span>
+                              ) : (
+                                <span className="text-xs font-medium text-amber-600">
+                                  Consultar
+                                </span>
+                              )}
                               <span className={cn(
                                 "text-xs font-medium",
                                 item.inventario_total > 0 ? "text-success" : "text-notion-text-secondary"
