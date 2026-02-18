@@ -34,6 +34,7 @@ catalogo-reluvsa/
 │       ├── reprocesar_nombres.py
 │       ├── reprocesar_skus_alternos.py  # Re-extrae skus_alternos con regex mejorado
 │       ├── procesar_productos_nuevos.py # Procesa productos recién importados
+│       ├── actualizar_precios_excel.py  # Actualiza precios (IVA) + inventario desde Excel
 │       └── validar_*.py                 # Scripts de validación
 ├── frontend/               # React SPA
 │   ├── src/
@@ -72,7 +73,7 @@ catalogo-reluvsa/
 ### Esquema Completo
 
 ```sql
--- Productos principales (35,439 registros)
+-- Productos principales (22,178 registros)
 CREATE TABLE productos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sku TEXT UNIQUE NOT NULL,
@@ -90,7 +91,7 @@ CREATE TABLE productos (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Compatibilidades vehiculares (59,121 registros)
+-- Compatibilidades vehiculares (29,168 registros)
 CREATE TABLE compatibilidades (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     producto_id INTEGER NOT NULL,
@@ -104,7 +105,7 @@ CREATE TABLE compatibilidades (
     FOREIGN KEY (producto_id) REFERENCES productos(id) ON DELETE CASCADE
 );
 
--- Inventario por sucursal (19,528 registros)
+-- Inventario por sucursal (19,763 registros)
 CREATE TABLE inventario (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     producto_id INTEGER NOT NULL,
@@ -113,7 +114,7 @@ CREATE TABLE inventario (
     FOREIGN KEY (producto_id) REFERENCES productos(id) ON DELETE CASCADE
 );
 
--- Características específicas (4,299 registros) - Llantas, aceites, acumuladores
+-- Características específicas (2,866 registros) - Llantas, aceites, acumuladores
 CREATE TABLE caracteristicas_producto (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     producto_id INTEGER NOT NULL,
@@ -319,11 +320,11 @@ Productos que comparten al menos un SKU (principal o alterno) son considerados i
 2. Para cada SKU compartido por 2+ productos, crea relaciones bidireccionales
 3. Almacena en tabla `productos_intercambiables`
 
-### Estadísticas
+### Estadísticas (Febrero 2026)
 - **7,336 productos** tienen al menos 1 intercambiable
 - **135,174 relaciones** bidireccionales
 - **18.4 promedio** de intercambiables por producto
-- **14,942 productos** con skus_alternos extraídos
+- **14,942 productos** con skus_alternos extraídos (67.4%)
 
 ### UI
 En el modal de detalle, sección "Productos Intercambiables":
@@ -337,9 +338,8 @@ En el modal de detalle, sección "Productos Intercambiables":
 Categorización adicional independiente del departamento. Ejemplos: AMORTIGUADORES, BALATAS DELANTERAS Y TRASERAS, BOMBA ACEITE, EMPAQUES, etc.
 
 ### Datos
-- **254 grupos únicos**
-- **35,249 productos** con grupo asignado (99.5%)
-- **190 productos** sin grupo
+- **248 grupos únicos**
+- **22,178 productos** con grupo asignado (100%)
 - Fuente: `data/grupos_producto.csv`
 
 ### Cascading
@@ -374,93 +374,109 @@ python3 scripts/reprocesar_completo.py
 # Reprocesar skus_alternos (re-extrae con regex mejorado)
 python3 scripts/reprocesar_skus_alternos.py
 
+# Actualizar precios (con IVA) e inventario desde Excel
+python3 scripts/actualizar_precios_excel.py
+
 # Validaciones
 python3 scripts/validar_100_porciento.py
 python3 scripts/validar_nombres.py
 ```
 
-## Actualización Incremental de Inventario
+## Actualización de Datos desde Excel (MÉTODO PRINCIPAL)
 
-### Proceso Completo
+### Contexto
+Los datos se actualizan desde un archivo Excel (.xlsx) que RELUVSA exporta periódicamente. El archivo siempre viene con el **mismo formato de 22 columnas**. Los precios en el Excel ya vienen **CON IVA**.
 
-Cuando llegue un nuevo CSV de inventario, seguir estos pasos:
+### Formato del Excel (22 columnas)
 
-#### 1. Preparar el CSV
-
-El archivo debe tener **16 columnas** en este formato:
-
-| # | Columna | Uso |
-|---|---------|-----|
+| Col | Columna | Uso |
+|-----|---------|-----|
 | 0 | Clave | SKU del producto |
 | 1 | Grupo -> Nombre | grupo_producto |
-| 2 | Codigo de Barras | (ignorado) |
-| 3 | Departamento -> Nombre | departamento |
-| 4 | Marcas Prodcuto -> Nombre | marca |
-| 5 | Descripcion | descripcion_original |
-| 6 | Precio Publico | precio_publico |
-| 7 | Precio Mayoreo | precio_mayoreo |
-| 8 | Variant Scr | imagen_url |
-| 9-14 | Sucursales | inventario por sucursal |
-| 15 | Total Almacenes | inventario_total |
+| 2 | SKU | (ignorado - duplicado) |
+| 3 | Codigo de Barras | (ignorado) |
+| 4 | Departamento -> Nombre | departamento |
+| 5 | Marcas Prodcuto -> Nombre | marca |
+| 6 | Ultima Venta | (ignorado) |
+| 7 | Última Compra | (ignorado) |
+| 8 | Dias sin venta | (ignorado) |
+| 9 | Descripcion | descripcion_original |
+| 10 | Precio Tres C/IVA | (ignorado) |
+| 11 | Precio Cinco C/IVA | (ignorado) |
+| 12 | Precio abierto 3 C/IVA | precio_publico (CON IVA) |
+| 13 | Precio abierto 5 C/IVA | precio_mayoreo (CON IVA) |
+| 14 | Variant Scr | imagen_url |
+| 15 | Carrera | inventario Suc. Carrera |
+| 16 | Berriozabal | inventario Suc. Berriozabal |
+| 17 | CEDIS | inventario CEDIS |
+| 18 | 31 Juarez | inventario Suc. 31 Juarez |
+| 19 | FULL | inventario FULL |
+| 20 | E-commerce | inventario Suc. E-commerce |
+| 21 | Total Almacenes | inventario_total |
 
-**IMPORTANTE**: Exportar el CSV con la columna SKU como **TEXTO**, no como número. Si Excel convierte los SKUs a notación científica (1.23E+11), los datos se corrompen.
+### Proceso de Actualización
 
-#### 2. Subir el CSV
+#### 1. Colocar el Excel
+Colocar el archivo en `data/limpieza-catalogo.xlsx` (sobrescribir el anterior).
 
-Colocar el archivo en `data/nuevo_inventario.csv`
+#### 2. Ejecutar desde /backend
+```bash
+cd backend
+python3 scripts/actualizar_precios_excel.py
+```
 
-#### 3. Hacer Backup
+#### 3. Copiar BD y hacer deploy
+```bash
+cp data/catalogo.db ../data/catalogo.db
+cd ..
+git add backend/data/catalogo.db data/catalogo.db
+git commit -m "Update precios e inventario desde Excel"
+git push
+```
+
+### Qué hace el script `actualizar_precios_excel.py`
+- Crea backup automático antes de actualizar
+- Actualiza `precio_publico` (col 10) y `precio_mayoreo` (col 11) con precios CON IVA
+- Actualiza `inventario_total` (col 21) y tabla `inventario` por sucursal (cols 15-20)
+- Productos del Excel que NO existen en BD → se ignoran (fueron purgados)
+- Productos en BD que NO están en el Excel → inventario se pone en 0
+- **NO modifica** nombres, compatibilidades, características ni intercambiables
+- Genera reporte con estadísticas
+
+### Precios en el Frontend
+- Los precios se muestran **CON IVA** (tal como vienen del Excel)
+- Leyenda "Precios incluyen IVA" visible en modal de detalle
+- Productos con precio $0 muestran "Consultar precio" en vez de $0.00
+- Actualmente ~218 productos con precio $0
+
+### Notas Importantes sobre SKUs
+- Los SKUs se normalizan quitando ceros iniciales en numéricos para hacer match
+- Ejemplo: `013030102` en Excel → `13030102` en BD
+- El Excel puede traer productos que ya fueron purgados; se ignoran automáticamente
+
+## Actualización Incremental desde CSV (método alternativo)
+
+### Proceso
+Para CSVs de inventario (formato diferente, 16 columnas), usar:
 
 ```bash
 cd backend
-cp ../data/catalogo.db ../data/catalogo_backup_$(date +%Y%m%d).db
-```
-
-#### 4. Ejecutar Actualización
-
-```bash
 python3 scripts/actualizar_inventario.py ../data/nuevo_inventario.csv
 ```
 
-**Output esperado:**
-```
-============================================================
-RESUMEN DE ACTUALIZACIÓN
-============================================================
-✓ Productos actualizados:    35,286
-✓ Productos NUEVOS:          310
-✓ Productos con inv. → 0:    163
-✗ Errores:                   0
-============================================================
-```
+**NOTA**: Este método importa precios **SIN IVA** (del CSV). Si se usa, después ejecutar `actualizar_precios_excel.py` para corregir precios con IVA.
 
-#### 5. Procesamiento Automático de Productos Nuevos
-
-El script `actualizar_inventario.py` ahora llama automáticamente a `procesar_productos_nuevos.py` cuando detecta productos nuevos. Este proceso:
-
-- Extrae nombres limpios (sin códigos/números al inicio)
-- Extrae compatibilidades vehiculares usando los parsers de marcas
-- Extrae tipo de producto y SKUs alternos
-- Calcula productos intercambiables
-
-**Si necesitas reprocesar manualmente:**
-```bash
-python3 scripts/procesar_productos_nuevos.py --days 60
-```
-
-### Comportamiento del Script
+### Comportamiento
 
 | Caso | Acción |
 |------|--------|
 | SKU existe en DB y CSV | UPDATE precios, inventario, grupo |
-| SKU solo en CSV (nuevo) | INSERT con `created_at = NOW()` |
+| SKU solo en CSV (nuevo) | INSERT con `created_at = NOW()` + procesamiento automático |
 | SKU solo en DB (no en CSV) | `inventario_total = 0` |
 
-**Notas:**
-- Los SKUs se normalizan (se quitan ceros iniciales en numéricos) para hacer match correcto
+- Los productos nuevos se procesan automáticamente (nombres, compatibilidades, intercambiables)
 - Los productos nuevos aparecen con badge "NUEVO" por 60 días
 - No se borran productos existentes, solo se pone inventario en 0
-- Se preservan compatibilidades, características e intercambiables
 
 ### Badge "Nuevo" en Frontend
 
@@ -530,7 +546,10 @@ sqlite3 data/catalogo.db "SELECT COUNT(*) FROM productos_intercambiables"
 | Productos con intercambiables | 7,336 (33.1%) |
 | Grupos de producto únicos | 248 |
 | Productos con grupo | 22,178 (100%) |
-| Registros de inventario | 19,873 |
+| Registros de inventario | 19,763 |
+| Productos con inventario > 0 | 14,707 (66.3%) |
+| Productos con precio $0 | 218 (1.0%) |
+| Precios | CON IVA incluido |
 
 ## Deploy (Railway)
 

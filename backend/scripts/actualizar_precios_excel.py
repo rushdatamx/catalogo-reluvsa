@@ -25,8 +25,8 @@ SHEET_NAME = "TODOS LOS PRODUCTOS ACTUALIZADO"
 
 # Columnas del Excel
 COL_SKU = 0               # Clave
-COL_PRECIO_PUBLICO = 10   # Precio Tres C/IVA
-COL_PRECIO_MAYOREO = 11   # Precio Cinco C/IVA
+COL_PRECIO_PUBLICO = 12   # Precio abierto 3 C/IVA (público)
+COL_PRECIO_MAYOREO = 13   # Precio abierto 5 C/IVA (mayoreo)
 COL_INVENTARIO_TOTAL = 21 # Total Almacenes
 
 # Mapeo: columna Excel -> nombre de sucursal en BD
