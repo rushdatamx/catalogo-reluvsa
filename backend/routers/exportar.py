@@ -632,7 +632,7 @@ async def exportar_pdf(
     styles = getSampleStyleSheet()
 
     # --- Professional header with logo + contact info + filters ---
-    logo_path = os.path.join(os.path.dirname(__file__), '..', '..', 'public', 'reluvsa-logo.png')
+    logo_path = os.path.join(os.path.dirname(__file__), '..', 'static', 'reluvsa-logo.png')
     logo_path = os.path.abspath(logo_path)
 
     # Logo cell (left)
