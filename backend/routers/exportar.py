@@ -3,6 +3,7 @@ Endpoints para exportar catálogo a Excel y PDF con imágenes embebidas.
 """
 import asyncio
 import io
+import json
 import math
 import sqlite3
 from typing import Optional, List, Dict, Any
@@ -42,7 +43,7 @@ MAX_PRODUCTOS_EXPORT = 500
 IMAGE_DOWNLOAD_TIMEOUT = 5.0
 IMAGE_CONCURRENCY = 10
 THUMB_SIZE_EXCEL = (75, 75)
-THUMB_SIZE_PDF = (50, 50)
+THUMB_SIZE_PDF = (150, 150)  # 3x resolution, rendered at 50x50pt for sharp output
 
 
 # ---------------------------------------------------------------------------
@@ -224,7 +225,7 @@ def _build_filtered_query(
         SELECT DISTINCT
             p.id, p.sku, p.departamento, p.marca, p.descripcion_original,
             p.nombre_producto, p.tipo_producto, p.precio_publico, p.precio_mayoreo,
-            p.imagen_url, p.inventario_total, p.grupo_producto,
+            p.imagen_url, p.inventario_total, p.grupo_producto, p.skus_alternos,
             CASE WHEN p.created_at >= datetime('now', '-60 days') THEN 1 ELSE 0 END as es_nuevo
         {base_query}
         {where_sql}
@@ -662,9 +663,9 @@ async def exportar_pdf(
 
     # Table header
     header_row = [
-        Paragraph("<b>Nuevo</b>", cell_style),
-        Paragraph("<b>SKU</b>", cell_style),
         Paragraph("<b>Imagen</b>", cell_style),
+        Paragraph("<b>Marca</b>", cell_style),
+        Paragraph("<b>No. Parte</b>", cell_style),
         Paragraph("<b>Grupo Producto</b>", cell_style),
         Paragraph("<b>Compatibilidades</b>", cell_style),
         Paragraph("<b>P. Público</b>", cell_style),
@@ -675,22 +676,30 @@ async def exportar_pdf(
     table_data = [header_row]
 
     for product in products:
-        # Nuevo
-        nuevo = "Sí" if product['es_nuevo'] else "No"
-
-        # SKU
+        # Image (use sku for download key)
         sku = product['sku']
-
-        # Image
-        sku_clean = sku
-        if sku_clean in thumbnails:
+        if sku in thumbnails:
             try:
-                img_io = io.BytesIO(thumbnails[sku_clean])
+                img_io = io.BytesIO(thumbnails[sku])
                 rl_img = RLImage(img_io, width=50, height=50)
             except Exception:
                 rl_img = ""
         else:
             rl_img = ""
+
+        # Marca
+        marca_prod = product.get('marca') or ''
+
+        # Número de parte (primer sku alterno, fallback a sku/clave)
+        num_parte = sku
+        skus_alt_raw = product.get('skus_alternos')
+        if skus_alt_raw:
+            try:
+                skus_alt = json.loads(skus_alt_raw) if isinstance(skus_alt_raw, str) else skus_alt_raw
+                if skus_alt and len(skus_alt) > 0:
+                    num_parte = skus_alt[0]
+            except (ValueError, TypeError):
+                pass
 
         # Grupo Producto
         grupo = product.get('grupo_producto') or ''
@@ -720,9 +729,9 @@ async def exportar_pdf(
         intercamb_text = "<br/>".join(intercamb_display) if intercamb_display else ""
 
         row = [
-            Paragraph(nuevo, cell_style),
-            Paragraph(sku, cell_style),
             rl_img,
+            Paragraph(marca_prod, cell_style),
+            Paragraph(num_parte, cell_style),
             Paragraph(grupo, cell_style),
             Paragraph(compat_text, cell_style_small),
             Paragraph(precio_pub, cell_style),
@@ -734,14 +743,14 @@ async def exportar_pdf(
     # Column widths (landscape letter ~10.5" usable after margins)
     available_width = page_w - 30 * mm  # left + right margins
     col_widths = [
-        30,   # Nuevo
-        65,   # SKU
         55,   # Imagen
+        60,   # Marca
+        65,   # No. Parte
         80,   # Grupo
-        150,  # Compatibilidades
+        140,  # Compatibilidades
         55,   # P. Público
         55,   # P. Mayoreo
-        available_width - 30 - 65 - 55 - 80 - 150 - 55 - 55,  # Intercambiables
+        available_width - 55 - 60 - 65 - 80 - 140 - 55 - 55,  # Intercambiables
     ]
 
     table = Table(table_data, colWidths=col_widths, repeatRows=1)
@@ -773,6 +782,18 @@ async def exportar_pdf(
 
     table.setStyle(TableStyle(style_commands))
     elements.append(table)
+
+    # Footer: Precios NETOS
+    footer_style = ParagraphStyle(
+        'FooterReluvsa',
+        parent=styles['Normal'],
+        fontSize=9,
+        textColor=colors.HexColor('#333333'),
+        spaceBefore=12,
+        alignment=1,  # CENTER
+    )
+    elements.append(Spacer(1, 8))
+    elements.append(Paragraph("<b>* Los precios mostrados son NETOS (incluyen IVA)</b>", footer_style))
 
     doc.build(elements)
     buffer.seek(0)
