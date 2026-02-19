@@ -637,7 +637,7 @@ async def exportar_pdf(
 
     # Logo cell (left)
     if os.path.exists(logo_path):
-        header_logo = RLImage(logo_path, width=120, height=60)
+        header_logo = RLImage(logo_path, width=80, height=80)
     else:
         header_logo = Paragraph("<b>RELUVSA AUTOPARTES</b>", ParagraphStyle(
             'LogoFallback', parent=styles['Title'], fontSize=14))
@@ -685,7 +685,7 @@ async def exportar_pdf(
     # Header table: [Logo | Contact info]
     header_table = Table(
         [[header_logo, Paragraph(info_text, contact_style)]],
-        colWidths=[130, available_width - 130],
+        colWidths=[90, available_width - 90],
     )
     header_table.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
