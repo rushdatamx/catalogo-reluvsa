@@ -2,9 +2,11 @@
 Endpoints para exportar catálogo a Excel y PDF con imágenes embebidas.
 """
 import asyncio
+import datetime
 import io
 import json
 import math
+import os
 import sqlite3
 from typing import Optional, List, Dict, Any
 
@@ -624,27 +626,87 @@ async def exportar_pdf(
         bottomMargin=15 * mm,
     )
 
+    available_width = page_w - 30 * mm  # left + right margins
     elements = []
 
-    # Title
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle(
-        'TitleReluvsa',
-        parent=styles['Title'],
-        fontSize=16,
-        textColor=colors.HexColor('#1a1a1a'),
-        spaceAfter=6,
+
+    # --- Professional header with logo + contact info + filters ---
+    logo_path = os.path.join(os.path.dirname(__file__), '..', '..', 'public', 'reluvsa-logo.png')
+    logo_path = os.path.abspath(logo_path)
+
+    # Logo cell (left)
+    if os.path.exists(logo_path):
+        header_logo = RLImage(logo_path, width=120, height=60)
+    else:
+        header_logo = Paragraph("<b>RELUVSA AUTOPARTES</b>", ParagraphStyle(
+            'LogoFallback', parent=styles['Title'], fontSize=14))
+
+    # Contact info (right)
+    contact_style = ParagraphStyle(
+        'ContactStyle', parent=styles['Normal'],
+        fontSize=8, leading=11, textColor=colors.HexColor('#333333'),
     )
-    subtitle_style = ParagraphStyle(
-        'SubtitleReluvsa',
-        parent=styles['Normal'],
-        fontSize=9,
-        textColor=colors.HexColor('#666666'),
-        spaceAfter=12,
+    contact_text = (
+        '<b>RELUVSA Berrioz\u00e1bal</b><br/>'
+        'Calle F. Berrioz\u00e1bal 1982, Comercial Dos Mil, 87058 Ciudad Victoria, Tamps.<br/>'
+        'Tel: +52 834 270 9767'
     )
 
-    elements.append(Paragraph("Catálogo RELUVSA", title_style))
-    elements.append(Paragraph(f"{len(products)} productos", subtitle_style))
+    # Build active filters summary
+    filtros_activos = []
+    if departamento:
+        filtros_activos.append(f"Depto: {departamento}")
+    if marca:
+        filtros_activos.append(f"Marca: {marca}")
+    if grupo_producto:
+        filtros_activos.append(f"Grupo: {grupo_producto}")
+    if marca_vehiculo:
+        filtros_activos.append(f"Veh\u00edculo: {marca_vehiculo}")
+    if modelo_vehiculo:
+        filtros_activos.append(modelo_vehiculo)
+    if año:
+        filtros_activos.append(str(año))
+    if motor:
+        filtros_activos.append(motor)
+    if q:
+        filtros_activos.append(f'B\u00fasqueda: "{q}"')
+
+    fecha_str = datetime.date.today().strftime("%d/%m/%Y")
+    filtros_str = " | ".join(filtros_activos) if filtros_activos else "Todos los productos"
+
+    info_text = (
+        f'{contact_text}<br/><br/>'
+        f'<font size="7" color="#666666">'
+        f'Fecha: {fecha_str} &nbsp;|&nbsp; {len(products)} productos &nbsp;|&nbsp; {filtros_str}'
+        f'</font>'
+    )
+
+    # Header table: [Logo | Contact info]
+    header_table = Table(
+        [[header_logo, Paragraph(info_text, contact_style)]],
+        colWidths=[130, available_width - 130],
+    )
+    header_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (0, 0), 0),
+        ('LEFTPADDING', (1, 0), (1, 0), 10),
+        ('RIGHTPADDING', (-1, -1), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    elements.append(header_table)
+
+    # Yellow divider line
+    divider = Table([['']], colWidths=[available_width], rowHeights=[3])
+    divider.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#FFD700')),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    elements.append(Spacer(1, 8))
+    elements.append(divider)
+    elements.append(Spacer(1, 10))
 
     # Cell styles for table content
     cell_style = ParagraphStyle(
@@ -741,7 +803,6 @@ async def exportar_pdf(
         table_data.append(row)
 
     # Column widths (landscape letter ~10.5" usable after margins)
-    available_width = page_w - 30 * mm  # left + right margins
     col_widths = [
         55,   # Imagen
         60,   # Marca
