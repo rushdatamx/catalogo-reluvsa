@@ -98,59 +98,208 @@ def parsear_fecha(valor) -> Optional[date]:
     return None
 
 
-def extraer_caracteristicas_nuevos(cursor, ids_nuevos: list):
-    """Extrae características específicas (llantas, aceites, acumuladores) para productos nuevos."""
+def procesar_nuevos_inline(cursor, ids_nuevos: list):
+    """
+    Procesa productos nuevos directamente sobre el mismo cursor/conexión.
+    Extrae nombres, compatibilidades, SKUs alternos y características.
+    """
+    import json
     sys.path.insert(0, str(Path(__file__).parent.parent))
+    from parsers import get_parser
     from parsers.extractores_caracteristicas import (
         ExtractorLlantas,
         ExtractorAceites,
         ExtractorAcumuladores,
     )
 
+    stats = {
+        'nombres_actualizados': 0,
+        'productos_con_compat': 0,
+        'compatibilidades_nuevas': 0,
+        'caracteristicas_extraidas': 0,
+        'errores': [],
+    }
+
+    if not ids_nuevos:
+        return stats
+
     extractor_llantas = ExtractorLlantas()
     extractor_aceites = ExtractorAceites()
     extractor_acumuladores = ExtractorAcumuladores()
 
-    total_caracs = 0
-
-    if not ids_nuevos:
-        return total_caracs
-
     placeholders = ','.join('?' * len(ids_nuevos))
     cursor.execute(f"""
-        SELECT id, departamento, marca, descripcion_original
+        SELECT id, sku, marca, departamento, descripcion_original
         FROM productos WHERE id IN ({placeholders})
     """, ids_nuevos)
     productos = cursor.fetchall()
 
-    for prod_id, departamento, marca, descripcion in productos:
+    for idx, (producto_id, sku, marca, departamento, descripcion) in enumerate(productos, 1):
+        marca = marca or ''
+        departamento = departamento or ''
+        descripcion = descripcion or ''
+
         if not descripcion:
             continue
 
-        departamento = departamento or ''
-        marca = marca or ''
-        caracteristicas = []
-        categoria = None
+        try:
+            # === Nombres, compatibilidades, SKUs alternos ===
+            parser = get_parser(marca)
+            resultado = parser.parse(descripcion)
+            nombre_limpio = parser.limpiar_nombre_producto(descripcion, marca, departamento)
 
-        if departamento == 'LLANTAS':
-            caracteristicas = extractor_llantas.extraer(descripcion)
-            categoria = 'llanta'
-        elif departamento in ('LUBRICACIÓN', 'QUIMICOS/ADITIVOS'):
-            caracteristicas = extractor_aceites.extraer(descripcion)
-            categoria = 'aceite'
-        elif marca in MARCAS_ACUMULADORES:
-            caracteristicas = extractor_acumuladores.extraer(descripcion)
-            categoria = 'acumulador'
+            if not nombre_limpio or len(nombre_limpio) < 5:
+                nombre_limpio = resultado.nombre_producto
 
-        for carac in caracteristicas:
-            cursor.execute("""
-                INSERT INTO caracteristicas_producto
-                (producto_id, categoria, clave, valor)
-                VALUES (?, ?, ?, ?)
-            """, (prod_id, categoria, carac.clave, carac.valor))
-            total_caracs += 1
+            if nombre_limpio:
+                cursor.execute("""
+                    UPDATE productos
+                    SET nombre_producto = ?, tipo_producto = ?, skus_alternos = ?
+                    WHERE id = ?
+                """, (
+                    nombre_limpio,
+                    resultado.tipo_producto or None,
+                    json.dumps(resultado.skus_alternos) if resultado.skus_alternos else None,
+                    producto_id
+                ))
+                stats['nombres_actualizados'] += 1
 
-    return total_caracs
+            # Compatibilidades
+            if resultado.compatibilidades:
+                stats['productos_con_compat'] += 1
+                for compat in resultado.compatibilidades:
+                    cursor.execute("""
+                        INSERT INTO compatibilidades (
+                            producto_id, marca_vehiculo, modelo_vehiculo,
+                            año_inicio, año_fin, motor, cilindros, especificacion
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        producto_id,
+                        compat.marca_vehiculo or None,
+                        compat.modelo_vehiculo or None,
+                        compat.año_inicio,
+                        compat.año_fin,
+                        compat.motor or None,
+                        compat.cilindros or None,
+                        compat.especificacion or None
+                    ))
+                    stats['compatibilidades_nuevas'] += 1
+
+            # === Características específicas (llantas, aceites, acumuladores) ===
+            caracteristicas = []
+            categoria = None
+
+            if departamento == 'LLANTAS':
+                caracteristicas = extractor_llantas.extraer(descripcion)
+                categoria = 'llanta'
+            elif departamento in ('LUBRICACIÓN', 'QUIMICOS/ADITIVOS'):
+                caracteristicas = extractor_aceites.extraer(descripcion)
+                categoria = 'aceite'
+            elif marca in MARCAS_ACUMULADORES:
+                caracteristicas = extractor_acumuladores.extraer(descripcion)
+                categoria = 'acumulador'
+
+            for carac in caracteristicas:
+                cursor.execute("""
+                    INSERT INTO caracteristicas_producto
+                    (producto_id, categoria, clave, valor)
+                    VALUES (?, ?, ?, ?)
+                """, (producto_id, categoria, carac.clave, carac.valor))
+                stats['caracteristicas_extraidas'] += 1
+
+        except Exception as e:
+            stats['errores'].append(f"SKU {sku}: {str(e)}")
+
+        if idx % 50 == 0:
+            print(f"  Procesados: {idx}/{len(productos)}...")
+
+    # === Intercambiables ===
+    print("\n  Calculando intercambiables...")
+    stats['intercambiables_nuevos'] = _calcular_intercambiables(cursor, ids_nuevos)
+
+    return stats
+
+
+def _calcular_intercambiables(cursor, ids_nuevos: list):
+    """Calcula intercambiables para productos nuevos usando el mismo cursor."""
+    import json
+    from collections import defaultdict
+
+    relaciones = 0
+
+    # Índice de SKUs principales
+    cursor.execute("SELECT id, sku FROM productos")
+    sku_principal = {}
+    for row in cursor.fetchall():
+        norm = row[1].strip().upper().replace(' ', '').replace('-', '')
+        if norm:
+            sku_principal[norm] = row[0]
+
+    # Índice de SKUs alternos
+    cursor.execute("""
+        SELECT id, skus_alternos FROM productos
+        WHERE skus_alternos IS NOT NULL AND skus_alternos != '' AND skus_alternos != '[]'
+    """)
+    sku_alterno = defaultdict(set)
+    for row in cursor.fetchall():
+        try:
+            alternos = json.loads(row[1])
+            if isinstance(alternos, list):
+                for alt in alternos:
+                    if alt and isinstance(alt, str):
+                        norm = alt.strip().upper().replace(' ', '').replace('-', '')
+                        if norm:
+                            sku_alterno[norm].add(row[0])
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # Para cada producto nuevo con alternos, buscar coincidencias
+    placeholders = ','.join('?' * len(ids_nuevos))
+    cursor.execute(f"""
+        SELECT id, skus_alternos FROM productos
+        WHERE id IN ({placeholders})
+          AND skus_alternos IS NOT NULL AND skus_alternos != '' AND skus_alternos != '[]'
+    """, ids_nuevos)
+
+    for row in cursor.fetchall():
+        prod_id = row[0]
+        try:
+            alternos = json.loads(row[1])
+            if not isinstance(alternos, list):
+                continue
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+        for alt in alternos:
+            if not alt or not isinstance(alt, str):
+                continue
+            norm = alt.strip().upper().replace(' ', '').replace('-', '')
+            if not norm:
+                continue
+
+            # Coincidencia con SKU principal
+            if norm in sku_principal:
+                otro_id = sku_principal[norm]
+                if otro_id != prod_id:
+                    try:
+                        cursor.execute("INSERT OR IGNORE INTO productos_intercambiables (producto_id, producto_intercambiable_id, sku_comun) VALUES (?, ?, ?)", (prod_id, otro_id, alt))
+                        cursor.execute("INSERT OR IGNORE INTO productos_intercambiables (producto_id, producto_intercambiable_id, sku_comun) VALUES (?, ?, ?)", (otro_id, prod_id, alt))
+                        relaciones += 2
+                    except Exception:
+                        pass
+
+            # Coincidencia con SKU alterno
+            if norm in sku_alterno:
+                for otro_id in sku_alterno[norm]:
+                    if otro_id != prod_id:
+                        try:
+                            cursor.execute("INSERT OR IGNORE INTO productos_intercambiables (producto_id, producto_intercambiable_id, sku_comun) VALUES (?, ?, ?)", (prod_id, otro_id, alt))
+                            cursor.execute("INSERT OR IGNORE INTO productos_intercambiables (producto_id, producto_intercambiable_id, sku_comun) VALUES (?, ?, ?)", (otro_id, prod_id, alt))
+                            relaciones += 2
+                        except Exception:
+                            pass
+
+    return relaciones
 
 
 def actualizar_precios(db_path: str = None, excel_path: str = None):
@@ -343,29 +492,23 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
 
     # === PROCESAMIENTO DE PRODUCTOS NUEVOS ===
     stats_nuevos = None
-    caracs_nuevos = 0
     if ids_nuevos:
         print(f"\n{'='*60}")
         print(f"PROCESANDO {len(ids_nuevos)} PRODUCTOS NUEVOS...")
         print(f"{'='*60}")
 
-        # 1. Extraer características específicas (llantas, aceites, acumuladores)
-        print("\nExtrayendo características específicas...")
-        caracs_nuevos = extraer_caracteristicas_nuevos(cursor, ids_nuevos)
+        stats_nuevos = procesar_nuevos_inline(cursor, ids_nuevos)
         conn.commit()
-        print(f"  Características extraídas: {caracs_nuevos}")
 
-        # 2. Procesar nombres, compatibilidades, SKUs alternos e intercambiables
-        #    Usamos procesar_productos_nuevos() con days=1 para los recién insertados
-        conn.close()  # Cerrar conexión para que procesar_productos_nuevos pueda usar get_db
-
-        sys.path.insert(0, str(Path(__file__).parent.parent))
-        from scripts.procesar_productos_nuevos import procesar_productos_nuevos
-        stats_nuevos = procesar_productos_nuevos(days=1, verbose=True)
-
-        # Reabrir conexión para verificaciones finales
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
+        print(f"\n  Nombres actualizados:      {stats_nuevos['nombres_actualizados']}")
+        print(f"  Con compatibilidades:      {stats_nuevos['productos_con_compat']}")
+        print(f"  Compatibilidades creadas:  {stats_nuevos['compatibilidades_nuevas']}")
+        print(f"  Intercambiables nuevos:    {stats_nuevos['intercambiables_nuevos']}")
+        print(f"  Características extraídas: {stats_nuevos['caracteristicas_extraidas']}")
+        if stats_nuevos['errores']:
+            print(f"  Errores: {len(stats_nuevos['errores'])}")
+            for err in stats_nuevos['errores'][:5]:
+                print(f"    - {err}")
 
     # Verificaciones finales
     cursor.execute("SELECT COUNT(*) FROM productos WHERE precio_publico = 0 OR precio_publico IS NULL")
@@ -417,7 +560,7 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
         print(f"    Con compatibilidades:       {stats_nuevos.get('productos_con_compat', 0):,}")
         print(f"    Compatibilidades creadas:   {stats_nuevos.get('compatibilidades_nuevas', 0):,}")
         print(f"    Intercambiables nuevos:     {stats_nuevos.get('intercambiables_nuevos', 0):,}")
-        print(f"    Características extraídas:  {caracs_nuevos:,}")
+        print(f"    Características extraídas:  {stats_nuevos.get('caracteristicas_extraidas', 0):,}")
 
     print(f"{'='*60}")
 
