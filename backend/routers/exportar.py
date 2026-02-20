@@ -844,17 +844,78 @@ async def exportar_pdf(
     table.setStyle(TableStyle(style_commands))
     elements.append(table)
 
-    # Footer: Precios NETOS
-    footer_style = ParagraphStyle(
-        'FooterReluvsa',
-        parent=styles['Normal'],
-        fontSize=9,
-        textColor=colors.HexColor('#333333'),
-        spaceBefore=12,
-        alignment=1,  # CENTER
-    )
+    # --- Términos y Condiciones ---
+    elements.append(Spacer(1, 15))
+
+    # Yellow divider (same as header)
+    tyc_divider = Table([['']], colWidths=[available_width], rowHeights=[3])
+    tyc_divider.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#FFD700')),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    elements.append(tyc_divider)
     elements.append(Spacer(1, 8))
-    elements.append(Paragraph("<b>* Los precios mostrados son NETOS (incluyen IVA)</b>", footer_style))
+
+    tyc_title_style = ParagraphStyle(
+        'TyCTitle', parent=styles['Normal'],
+        fontSize=9, fontName='Helvetica-Bold',
+        textColor=colors.HexColor('#1a1a1a'),
+        spaceBefore=0, spaceAfter=6,
+    )
+    elements.append(Paragraph("TÉRMINOS Y CONDICIONES", tyc_title_style))
+
+    tyc_style = ParagraphStyle(
+        'TyCItem', parent=styles['Normal'],
+        fontSize=7.5, leading=10,
+        textColor=colors.HexColor('#333333'),
+        spaceBefore=2, spaceAfter=2,
+        leftIndent=12,
+    )
+
+    terminos = [
+        (
+            "Precios de mayoreo.",
+            "Aplican en compras con importe mínimo de $2,000.00 MXN por factura."
+        ),
+        (
+            "Precios netos.",
+            "Todos los precios mostrados son NETOS e incluyen IVA. "
+            "Se incluye precio sugerido a público en general."
+        ),
+        (
+            "Envío gratuito.",
+            "Envío sin costo dentro del estado de Tamaulipas, en rutas establecidas "
+            "por Reluvsa. Para otros estados se deberá confirmar costo de envío."
+        ),
+        (
+            "Formas de pago.",
+            "Contado (efectivo, transferencia o tarjeta de crédito o débito)."
+        ),
+        (
+            "Vigencia de precios.",
+            "Precios de la cotización vigentes solo por 7 días."
+        ),
+        (
+            "Disponibilidad.",
+            "Precios válidos salvo existencia en almacén."
+        ),
+        (
+            "Devoluciones y garantías.",
+            "Cambios únicamente por defectos de fábrica. No se aceptan devoluciones "
+            "por mala instalación. Garantías conforme a políticas del fabricante."
+        ),
+        (
+            "Facturación.",
+            "La solicitud de factura deberá realizarse dentro del mismo mes de la compra."
+        ),
+    ]
+
+    for i, (titulo, texto) in enumerate(terminos, 1):
+        elements.append(Paragraph(
+            f"<b>{i}. {titulo}</b> {texto}",
+            tyc_style,
+        ))
 
     doc.build(elements)
     buffer.seek(0)
