@@ -8,13 +8,16 @@ Lee data/limpieza-catalogo.xlsx, hoja "TODOS LOS PRODUCTOS ACTUALIZADO".
 Actualiza:
 - precio_publico y precio_mayoreo con precios CON IVA
 - inventario_total y tabla inventario por sucursal
-NO modifica nombres, compatibilidades, características ni intercambiables.
+- Inserta productos NUEVOS si: inventario > 0 AND última compra < 5 años
+Para productos nuevos, ejecuta procesamiento automático (nombres, compatibilidades, etc.)
 """
 
+import sys
 import sqlite3
 import shutil
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
+from typing import Optional
 
 import openpyxl
 
@@ -25,8 +28,14 @@ SHEET_NAME = "TODOS LOS PRODUCTOS ACTUALIZADO"
 
 # Columnas del Excel
 COL_SKU = 0               # Clave
+COL_GRUPO = 1             # Grupo -> Nombre
+COL_DEPARTAMENTO = 4      # Departamento -> Nombre
+COL_MARCA = 5             # Marcas Prodcuto -> Nombre
+COL_ULTIMA_COMPRA = 7     # Última Compra
+COL_DESCRIPCION = 9       # Descripcion
 COL_PRECIO_PUBLICO = 12   # Precio abierto 3 C/IVA (público)
 COL_PRECIO_MAYOREO = 13   # Precio abierto 5 C/IVA (mayoreo)
+COL_IMAGEN_URL = 14       # Variant Scr
 COL_INVENTARIO_TOTAL = 21 # Total Almacenes
 
 # Mapeo: columna Excel -> nombre de sucursal en BD
@@ -38,6 +47,10 @@ SUCURSALES = {
     19: 'FULL',
     20: 'Suc. E-commerce',
 }
+
+# Condiciones para productos nuevos
+AÑOS_LIMITE_COMPRA = 5  # Última compra debe ser < 5 años
+MARCAS_ACUMULADORES = ['CHECKER', 'EXTREMA', 'CAMEL']
 
 
 def normalizar_sku(sku: str) -> str:
@@ -56,6 +69,88 @@ def limpiar_numero(valor) -> float:
         return float(valor)
     except (ValueError, TypeError):
         return 0.0
+
+
+def limpiar_texto(valor) -> str:
+    """Convierte valor de celda a string limpio."""
+    if valor is None:
+        return ''
+    return str(valor).strip()
+
+
+def parsear_fecha(valor) -> Optional[date]:
+    """Parsea una fecha del Excel. Puede ser datetime o string."""
+    if valor is None:
+        return None
+    if isinstance(valor, datetime):
+        return valor.date()
+    if isinstance(valor, date):
+        return valor
+    # Intentar parsear como string
+    texto = str(valor).strip()
+    if not texto:
+        return None
+    for fmt in ('%d/%m/%Y', '%Y-%m-%d', '%d-%m-%Y', '%m/%d/%Y'):
+        try:
+            return datetime.strptime(texto, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def extraer_caracteristicas_nuevos(cursor, ids_nuevos: list):
+    """Extrae características específicas (llantas, aceites, acumuladores) para productos nuevos."""
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from parsers.extractores_caracteristicas import (
+        ExtractorLlantas,
+        ExtractorAceites,
+        ExtractorAcumuladores,
+    )
+
+    extractor_llantas = ExtractorLlantas()
+    extractor_aceites = ExtractorAceites()
+    extractor_acumuladores = ExtractorAcumuladores()
+
+    total_caracs = 0
+
+    if not ids_nuevos:
+        return total_caracs
+
+    placeholders = ','.join('?' * len(ids_nuevos))
+    cursor.execute(f"""
+        SELECT id, departamento, marca, descripcion_original
+        FROM productos WHERE id IN ({placeholders})
+    """, ids_nuevos)
+    productos = cursor.fetchall()
+
+    for prod_id, departamento, marca, descripcion in productos:
+        if not descripcion:
+            continue
+
+        departamento = departamento or ''
+        marca = marca or ''
+        caracteristicas = []
+        categoria = None
+
+        if departamento == 'LLANTAS':
+            caracteristicas = extractor_llantas.extraer(descripcion)
+            categoria = 'llanta'
+        elif departamento in ('LUBRICACIÓN', 'QUIMICOS/ADITIVOS'):
+            caracteristicas = extractor_aceites.extraer(descripcion)
+            categoria = 'aceite'
+        elif marca in MARCAS_ACUMULADORES:
+            caracteristicas = extractor_acumuladores.extraer(descripcion)
+            categoria = 'acumulador'
+
+        for carac in caracteristicas:
+            cursor.execute("""
+                INSERT INTO caracteristicas_producto
+                (producto_id, categoria, clave, valor)
+                VALUES (?, ?, ?, ?)
+            """, (prod_id, categoria, carac.clave, carac.valor))
+            total_caracs += 1
+
+    return total_caracs
 
 
 def actualizar_precios(db_path: str = None, excel_path: str = None):
@@ -77,6 +172,10 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
     shutil.copy2(db_path, backup_path)
     print(f"Backup creado: {backup_path}")
 
+    # Fecha límite para productos nuevos (5 años atrás)
+    fecha_limite = date(date.today().year - AÑOS_LIMITE_COMPRA, date.today().month, date.today().day)
+    print(f"Fecha límite última compra: {fecha_limite}")
+
     # Leer Excel
     print(f"\nLeyendo Excel: {excel_path}")
     wb = openpyxl.load_workbook(excel_path, read_only=True)
@@ -84,6 +183,7 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
 
     # Construir diccionario SKU -> datos
     datos_excel = {}
+    datos_nuevos = {}  # Datos adicionales para productos nuevos
     for row in ws.iter_rows(min_row=2, values_only=True):
         if not row[COL_SKU]:
             continue
@@ -100,6 +200,17 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
                 inv_sucursales[nombre_suc] = cantidad
 
         datos_excel[sku] = (precio_pub, precio_may, inv_total, inv_sucursales)
+
+        # Guardar datos adicionales para posible INSERT de producto nuevo
+        datos_nuevos[sku] = {
+            'sku_original': str(row[COL_SKU]).strip(),
+            'grupo_producto': limpiar_texto(row[COL_GRUPO]),
+            'departamento': limpiar_texto(row[COL_DEPARTAMENTO]),
+            'marca': limpiar_texto(row[COL_MARCA]),
+            'ultima_compra': parsear_fecha(row[COL_ULTIMA_COMPRA]),
+            'descripcion_original': limpiar_texto(row[COL_DESCRIPCION]),
+            'imagen_url': limpiar_texto(row[COL_IMAGEN_URL]),
+        }
 
     wb.close()
     print(f"Productos en Excel: {len(datos_excel):,}")
@@ -124,12 +235,70 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
     no_encontrados = 0
     precio_cero = 0
     inv_registros = 0
+    nuevos_insertados = 0
+    nuevos_sin_inventario = 0
+    nuevos_compra_vieja = 0
+    ids_nuevos = []
 
     print(f"\nActualizando precios e inventario...\n")
 
     for sku_norm, (precio_pub, precio_may, inv_total, inv_sucursales) in datos_excel.items():
         if sku_norm not in sku_norm_to_db:
-            no_encontrados += 1
+            # === PRODUCTO NUEVO: verificar condiciones ===
+            datos = datos_nuevos[sku_norm]
+
+            # Condición 1: inventario > 0
+            if inv_total <= 0:
+                nuevos_sin_inventario += 1
+                no_encontrados += 1
+                continue
+
+            # Condición 2: última compra < 5 años
+            ultima_compra = datos['ultima_compra']
+            if ultima_compra is None or ultima_compra < fecha_limite:
+                nuevos_compra_vieja += 1
+                no_encontrados += 1
+                continue
+
+            # Insertar producto nuevo
+            sku_insert = datos['sku_original']
+            # Si el SKU original es numérico, usar normalizado para consistencia con BD
+            if sku_insert.isdigit():
+                sku_insert = sku_insert.lstrip('0') or '0'
+
+            cursor.execute("""
+                INSERT INTO productos (
+                    sku, departamento, marca, descripcion_original,
+                    precio_publico, precio_mayoreo, imagen_url,
+                    inventario_total, grupo_producto, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                sku_insert,
+                datos['departamento'] or None,
+                datos['marca'] or None,
+                datos['descripcion_original'] or None,
+                precio_pub,
+                precio_may,
+                datos['imagen_url'] or None,
+                inv_total,
+                datos['grupo_producto'] or None,
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            ))
+
+            producto_id = cursor.lastrowid
+            ids_nuevos.append(producto_id)
+
+            # Insertar inventario por sucursal
+            for sucursal, cantidad in inv_sucursales.items():
+                cursor.execute("""
+                    INSERT INTO inventario (producto_id, sucursal, cantidad)
+                    VALUES (?, ?, ?)
+                """, (producto_id, sucursal, cantidad))
+                inv_registros += 1
+
+            nuevos_insertados += 1
+            if precio_pub == 0.0:
+                precio_cero += 1
             continue
 
         sku_db = sku_norm_to_db[sku_norm]
@@ -172,12 +341,41 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
 
     conn.commit()
 
+    # === PROCESAMIENTO DE PRODUCTOS NUEVOS ===
+    stats_nuevos = None
+    caracs_nuevos = 0
+    if ids_nuevos:
+        print(f"\n{'='*60}")
+        print(f"PROCESANDO {len(ids_nuevos)} PRODUCTOS NUEVOS...")
+        print(f"{'='*60}")
+
+        # 1. Extraer características específicas (llantas, aceites, acumuladores)
+        print("\nExtrayendo características específicas...")
+        caracs_nuevos = extraer_caracteristicas_nuevos(cursor, ids_nuevos)
+        conn.commit()
+        print(f"  Características extraídas: {caracs_nuevos}")
+
+        # 2. Procesar nombres, compatibilidades, SKUs alternos e intercambiables
+        #    Usamos procesar_productos_nuevos() con days=1 para los recién insertados
+        conn.close()  # Cerrar conexión para que procesar_productos_nuevos pueda usar get_db
+
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        from scripts.procesar_productos_nuevos import procesar_productos_nuevos
+        stats_nuevos = procesar_productos_nuevos(days=1, verbose=True)
+
+        # Reabrir conexión para verificaciones finales
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
     # Verificaciones finales
     cursor.execute("SELECT COUNT(*) FROM productos WHERE precio_publico = 0 OR precio_publico IS NULL")
     total_cero_final = cursor.fetchone()[0]
 
     cursor.execute("SELECT COUNT(*) FROM inventario")
     inv_despues = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COUNT(*) FROM productos")
+    total_productos = cursor.fetchone()[0]
 
     cursor.execute("SELECT precio_publico, precio_mayoreo, inventario_total FROM productos WHERE sku = '125010075'")
     ejemplo = cursor.fetchone()
@@ -197,12 +395,30 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
     print("RESUMEN DE ACTUALIZACIÓN")
     print(f"{'='*60}")
     print(f"  Productos actualizados:       {actualizados:,}")
+    print(f"  Productos NUEVOS insertados:  {nuevos_insertados:,}")
     print(f"  No encontrados en BD:         {no_encontrados:,}")
+    if nuevos_sin_inventario > 0 or nuevos_compra_vieja > 0:
+        print(f"{'─'*60}")
+        print(f"  Nuevos descartados:")
+        print(f"    Sin inventario:             {nuevos_sin_inventario:,}")
+        print(f"    Compra > {AÑOS_LIMITE_COMPRA} años:             {nuevos_compra_vieja:,}")
+    print(f"{'─'*60}")
     print(f"  Productos inv. → 0:           {inv_a_cero:,}")
     print(f"  Quedan con precio $0:         {total_cero_final:,}")
+    print(f"  Total productos en BD:        {total_productos:,}")
     print(f"{'─'*60}")
     print(f"  Registros inventario antes:   {inv_antes:,}")
     print(f"  Registros inventario ahora:   {inv_despues:,}")
+
+    if stats_nuevos:
+        print(f"{'─'*60}")
+        print(f"  PROCESAMIENTO PRODUCTOS NUEVOS:")
+        print(f"    Nombres actualizados:       {stats_nuevos.get('nombres_actualizados', 0):,}")
+        print(f"    Con compatibilidades:       {stats_nuevos.get('productos_con_compat', 0):,}")
+        print(f"    Compatibilidades creadas:   {stats_nuevos.get('compatibilidades_nuevas', 0):,}")
+        print(f"    Intercambiables nuevos:     {stats_nuevos.get('intercambiables_nuevos', 0):,}")
+        print(f"    Características extraídas:  {caracs_nuevos:,}")
+
     print(f"{'='*60}")
 
     if ejemplo:
