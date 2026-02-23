@@ -339,14 +339,14 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
         sku = normalizar_sku(row[COL_SKU])
         precio_pub = round(limpiar_numero(row[COL_PRECIO_PUBLICO]), 2)
         precio_may = round(limpiar_numero(row[COL_PRECIO_MAYOREO]), 2)
-        inv_total = int(limpiar_numero(row[COL_INVENTARIO_TOTAL]))
-
-        # Inventario por sucursal
+        # Inventario por sucursal (calculamos total sumando sucursales)
         inv_sucursales = {}
+        inv_total = 0
         for col_idx, nombre_suc in SUCURSALES.items():
             cantidad = int(limpiar_numero(row[col_idx]))
             if cantidad > 0:
                 inv_sucursales[nombre_suc] = cantidad
+                inv_total += cantidad
 
         datos_excel[sku] = (precio_pub, precio_may, inv_total, inv_sucursales)
 
@@ -358,7 +358,7 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
             'marca': limpiar_texto(row[COL_MARCA]),
             'ultima_compra': parsear_fecha(row[COL_ULTIMA_COMPRA]),
             'descripcion_original': limpiar_texto(row[COL_DESCRIPCION]),
-            'imagen_url': limpiar_texto(row[COL_IMAGEN_URL]),
+            'imagen_url': limpiar_texto(row[COL_IMAGEN_URL]) if str(row[COL_IMAGEN_URL] or '').startswith('http') else '',
         }
 
     wb.close()
