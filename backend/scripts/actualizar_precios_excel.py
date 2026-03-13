@@ -24,7 +24,7 @@ import openpyxl
 # Rutas
 DB_PATH = Path(__file__).parent.parent / "data" / "catalogo.db"
 EXCEL_PATH = Path(__file__).parent.parent.parent / "data" / "limpieza-catalogo.xlsx"
-SHEET_NAME = "TODOS LOS PRODUCTOS ACTUALIZADO"
+SHEET_NAME = "TODOS LOS PRODUCTOS MARZO"
 
 # Columnas del Excel
 COL_SKU = 0               # Clave
