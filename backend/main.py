@@ -76,7 +76,8 @@ def get_stats():
                 (SELECT COUNT(DISTINCT marca_vehiculo) FROM compatibilidades WHERE marca_vehiculo IS NOT NULL) as marcas_vehiculo,
                 (SELECT COUNT(DISTINCT modelo_vehiculo) FROM compatibilidades WHERE modelo_vehiculo IS NOT NULL) as modelos_vehiculo,
                 (SELECT COUNT(DISTINCT departamento) FROM productos WHERE departamento IS NOT NULL) as departamentos,
-                (SELECT COUNT(DISTINCT marca) FROM productos WHERE marca IS NOT NULL) as marcas_producto
+                (SELECT COUNT(DISTINCT marca) FROM productos WHERE marca IS NOT NULL) as marcas_producto,
+                (SELECT MAX(created_at) FROM productos) as ultima_actualizacion
         """)
         row = cursor.fetchone()
 
@@ -89,6 +90,7 @@ def get_stats():
             'modelos_vehiculo': row['modelos_vehiculo'],
             'departamentos': row['departamentos'],
             'marcas_producto': row['marcas_producto'],
+            'ultima_actualizacion': row['ultima_actualizacion'],
         }
 
 

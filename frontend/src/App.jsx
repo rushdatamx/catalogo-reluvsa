@@ -329,6 +329,12 @@ function AppContent() {
                     <Link2 size={16} />
                     <span>{stats.total_compatibilidades?.toLocaleString()} compat.</span>
                   </div>
+                  {stats.ultima_actualizacion && (
+                    <div className="flex items-center gap-2 bg-black/10 px-3 py-1.5 rounded-full text-sm font-medium">
+                      <Calendar size={16} />
+                      <span>Act. {new Date(stats.ultima_actualizacion).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                    </div>
+                  )}
                 </div>
               )}
               {/* Usuario y Logout */}
