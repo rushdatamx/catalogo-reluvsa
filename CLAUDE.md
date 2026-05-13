@@ -1,5 +1,14 @@
 # CLAUDE.md - Catálogo RELUVSA
 
+## Inicio de Conversación
+
+Cuando el usuario diga "lee el claude.md" o inicie una conversación pidiendo contexto del proyecto, ofrecer como **opción principal** la actualización del catálogo:
+
+> **¿Buscas actualizar la información del catálogo?**
+> Usa `/actualizar-catalogo` o coloca el archivo `borrador-catalogo.xlsx` en `data/` y dime que lo revise.
+
+Además, mostrar un resumen breve de las otras capacidades disponibles (agentes expertos, debugging, etc.).
+
 ## Descripción del Proyecto
 
 Sistema de catálogo de autopartes para RELUVSA con filtros en cascada estilo Amazon/MercadoLibre. Permite buscar productos por vehículo, marca, departamento, grupo de producto y características específicas (llantas, aceites, acumuladores). Incluye detección de productos intercambiables basada en SKUs compartidos.
@@ -374,7 +383,7 @@ python3 scripts/reprocesar_completo.py
 # Reprocesar skus_alternos (re-extrae con regex mejorado)
 python3 scripts/reprocesar_skus_alternos.py
 
-# Actualizar precios (con IVA) e inventario desde Excel
+# Actualizar precios (con IVA), inventario e insertar productos nuevos desde Excel
 python3 scripts/actualizar_precios_excel.py
 
 # Validaciones
@@ -392,20 +401,20 @@ Los datos se actualizan desde un archivo Excel (.xlsx) que RELUVSA exporta peri�
 | Col | Columna | Uso |
 |-----|---------|-----|
 | 0 | Clave | SKU del producto |
-| 1 | Grupo -> Nombre | grupo_producto |
+| 1 | Grupo -> Nombre | grupo_producto (para nuevos) |
 | 2 | SKU | (ignorado - duplicado) |
 | 3 | Codigo de Barras | (ignorado) |
-| 4 | Departamento -> Nombre | departamento |
-| 5 | Marcas Prodcuto -> Nombre | marca |
+| 4 | Departamento -> Nombre | departamento (para nuevos) |
+| 5 | Marcas Prodcuto -> Nombre | marca (para nuevos) |
 | 6 | Ultima Venta | (ignorado) |
-| 7 | Última Compra | (ignorado) |
+| 7 | Última Compra | fecha para filtro de nuevos (< 5 años) |
 | 8 | Dias sin venta | (ignorado) |
-| 9 | Descripcion | descripcion_original |
+| 9 | Descripcion | descripcion_original (para nuevos) |
 | 10 | Precio Tres C/IVA | (ignorado) |
 | 11 | Precio Cinco C/IVA | (ignorado) |
 | 12 | Precio abierto 3 C/IVA | precio_publico (CON IVA) |
 | 13 | Precio abierto 5 C/IVA | precio_mayoreo (CON IVA) |
-| 14 | Variant Scr | imagen_url |
+| 14 | Variant Scr | imagen_url (para nuevos) |
 | 15 | Carrera | inventario Suc. Carrera |
 | 16 | Berriozabal | inventario Suc. Berriozabal |
 | 17 | CEDIS | inventario CEDIS |
@@ -435,24 +444,49 @@ git push
 ```
 
 ### Qué hace el script `actualizar_precios_excel.py`
-- Crea backup automático antes de actualizar
-- Actualiza `precio_publico` (col 10) y `precio_mayoreo` (col 11) con precios CON IVA
+
+#### Productos existentes (UPDATE)
+- Actualiza `precio_publico` (col 12) y `precio_mayoreo` (col 13) con precios CON IVA
 - Actualiza `inventario_total` (col 21) y tabla `inventario` por sucursal (cols 15-20)
-- Productos del Excel que NO existen en BD → se ignoran (fueron purgados)
 - Productos en BD que NO están en el Excel → inventario se pone en 0
-- **NO modifica** nombres, compatibilidades, características ni intercambiables
-- Genera reporte con estadísticas
+- **Descripción cambiada (modo MERGE)**: si la columna Descripcion del Excel difiere de
+  `descripcion_original` en BD, el script:
+  - Actualiza `descripcion_original` con la nueva versión
+  - Re-extrae nombre limpio, SKUs alternos, compatibilidades, características e intercambios
+  - **Solo AGREGA lo nuevo** (no borra los datos existentes para preservar info validada)
+  - Recalcula intercambios solo para los productos afectados
+
+#### Productos nuevos (INSERT + procesamiento automático)
+Productos del Excel que NO existen en BD se insertan si cumplen **ambas** condiciones:
+1. **Inventario > 0** (col 21: Total Almacenes)
+2. **Última compra < 5 años** (col 7: Última Compra)
+
+Para los productos nuevos insertados, el script ejecuta **inline** (misma conexión BD):
+- Extracción de nombre limpio (`nombre_producto`) usando el parser de la marca
+- Extracción de compatibilidades vehiculares
+- Extracción de SKUs alternos y tipo de producto
+- Extracción de características específicas (llantas, aceites, acumuladores)
+- Cálculo de productos intercambiables
+- Los productos nuevos aparecen con badge "NUEVO" por 60 días
+
+Productos nuevos que NO cumplen las condiciones se ignoran (sin inventario o compra muy vieja).
+
+#### Otras operaciones
+- Crea backup automático antes de actualizar
+- Genera reporte detallado con estadísticas de actualización y productos nuevos
+
+### Nota técnica importante
+Todo el procesamiento de productos nuevos (nombres, compatibilidades, intercambiables, características) se hace **inline con el mismo cursor/conexión** sobre `backend/data/catalogo.db`. NO se usa `procesar_productos_nuevos.py` ni `get_db()` desde este script, ya que `get_db()` apunta a `data/catalogo.db` (raíz) y causaría que los cambios se escriban en la BD equivocada.
 
 ### Precios en el Frontend
 - Los precios se muestran **CON IVA** (tal como vienen del Excel)
 - Leyenda "Precios incluyen IVA" visible en modal de detalle
 - Productos con precio $0 muestran "Consultar precio" en vez de $0.00
-- Actualmente ~218 productos con precio $0
 
 ### Notas Importantes sobre SKUs
 - Los SKUs se normalizan quitando ceros iniciales en numéricos para hacer match
 - Ejemplo: `013030102` en Excel → `13030102` en BD
-- El Excel puede traer productos que ya fueron purgados; se ignoran automáticamente
+- El Excel puede traer productos nuevos que se insertarán si cumplen las condiciones
 
 ## Actualización Incremental desde CSV (método alternativo)
 
@@ -538,17 +572,15 @@ sqlite3 data/catalogo.db "SELECT COUNT(*) FROM productos_intercambiables"
 
 | Métrica | Valor |
 |---------|-------|
-| Productos totales | 22,178 |
-| Compatibilidades vehiculares | 29,168 |
-| Características específicas | 2,866 |
-| Productos con skus_alternos | 14,942 (67.4%) |
-| Relaciones intercambiables | 135,174 |
-| Productos con intercambiables | 7,336 (33.1%) |
-| Grupos de producto únicos | 248 |
-| Productos con grupo | 22,178 (100%) |
-| Registros de inventario | 19,763 |
-| Productos con inventario > 0 | 14,707 (66.3%) |
-| Productos con precio $0 | 218 (1.0%) |
+| Productos totales | 22,344 |
+| Compatibilidades vehiculares | 29,554 |
+| Características específicas | 2,874 |
+| Productos con skus_alternos | ~15,100 |
+| Relaciones intercambiables | ~136,152 |
+| Grupos de producto únicos | ~248 |
+| Productos con grupo | 22,344 (100%) |
+| Registros de inventario | 19,976 |
+| Productos con precio $0 | 217 |
 | Precios | CON IVA incluido |
 
 ## Deploy (Railway)

@@ -98,6 +98,180 @@ def parsear_fecha(valor) -> Optional[date]:
     return None
 
 
+def procesar_descripciones_cambiadas_inline(cursor, ids_cambiados: list):
+    """
+    Procesa productos EXISTENTES cuya descripcion_original cambio.
+    Modo MERGE: solo AGREGA compatibilidades / SKUs alternos / intercambios nuevos.
+    No borra los existentes.
+    """
+    import json
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from parsers import get_parser
+    from parsers.extractores_caracteristicas import (
+        ExtractorLlantas,
+        ExtractorAceites,
+        ExtractorAcumuladores,
+    )
+
+    stats = {
+        'productos_procesados': 0,
+        'nombres_actualizados': 0,
+        'skus_alternos_agregados': 0,
+        'compatibilidades_nuevas': 0,
+        'caracteristicas_nuevas': 0,
+        'intercambiables_nuevos': 0,
+        'errores': [],
+    }
+
+    if not ids_cambiados:
+        return stats
+
+    extractor_llantas = ExtractorLlantas()
+    extractor_aceites = ExtractorAceites()
+    extractor_acumuladores = ExtractorAcumuladores()
+
+    placeholders = ','.join('?' * len(ids_cambiados))
+    cursor.execute(f"""
+        SELECT id, sku, marca, departamento, descripcion_original, skus_alternos
+        FROM productos WHERE id IN ({placeholders})
+    """, ids_cambiados)
+    productos = cursor.fetchall()
+
+    for idx, (producto_id, sku, marca, departamento, descripcion, alts_json) in enumerate(productos, 1):
+        marca = marca or ''
+        departamento = departamento or ''
+        descripcion = descripcion or ''
+
+        if not descripcion:
+            continue
+
+        try:
+            parser = get_parser(marca)
+            resultado = parser.parse(descripcion)
+            nombre_limpio = parser.limpiar_nombre_producto(descripcion, marca, departamento)
+
+            if not nombre_limpio or len(nombre_limpio) < 5:
+                nombre_limpio = resultado.nombre_producto
+
+            # === SKUs alternos: merge con los existentes ===
+            try:
+                alts_actuales = json.loads(alts_json or '[]')
+                if not isinstance(alts_actuales, list):
+                    alts_actuales = []
+            except (json.JSONDecodeError, TypeError):
+                alts_actuales = []
+
+            # Normalizar para comparar pero conservar el valor original
+            alts_set_norm = {a.strip().upper().replace(' ', '').replace('-', '')
+                             for a in alts_actuales if isinstance(a, str) and a.strip()}
+            alts_nuevos_detectados = []
+            for a in (resultado.skus_alternos or []):
+                if not isinstance(a, str) or not a.strip():
+                    continue
+                n = a.strip().upper().replace(' ', '').replace('-', '')
+                if n and n not in alts_set_norm:
+                    alts_actuales.append(a)
+                    alts_set_norm.add(n)
+                    alts_nuevos_detectados.append(a)
+
+            cursor.execute("""
+                UPDATE productos
+                SET nombre_producto = COALESCE(?, nombre_producto),
+                    tipo_producto = COALESCE(?, tipo_producto),
+                    skus_alternos = ?
+                WHERE id = ?
+            """, (
+                nombre_limpio or None,
+                resultado.tipo_producto or None,
+                json.dumps(alts_actuales) if alts_actuales else None,
+                producto_id
+            ))
+            if nombre_limpio:
+                stats['nombres_actualizados'] += 1
+            stats['skus_alternos_agregados'] += len(alts_nuevos_detectados)
+
+            # === Compatibilidades: agregar las nuevas ===
+            # Cargar las existentes para comparar
+            cursor.execute("""
+                SELECT marca_vehiculo, modelo_vehiculo, año_inicio, año_fin, motor
+                FROM compatibilidades WHERE producto_id = ?
+            """, (producto_id,))
+            compats_existentes = {tuple(r) for r in cursor.fetchall()}
+
+            for compat in resultado.compatibilidades:
+                clave = (
+                    compat.marca_vehiculo or None,
+                    compat.modelo_vehiculo or None,
+                    compat.año_inicio,
+                    compat.año_fin,
+                    compat.motor or None,
+                )
+                if clave in compats_existentes:
+                    continue
+                cursor.execute("""
+                    INSERT INTO compatibilidades (
+                        producto_id, marca_vehiculo, modelo_vehiculo,
+                        año_inicio, año_fin, motor, cilindros, especificacion
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    producto_id,
+                    compat.marca_vehiculo or None,
+                    compat.modelo_vehiculo or None,
+                    compat.año_inicio,
+                    compat.año_fin,
+                    compat.motor or None,
+                    compat.cilindros or None,
+                    compat.especificacion or None
+                ))
+                compats_existentes.add(clave)
+                stats['compatibilidades_nuevas'] += 1
+
+            # === Caracteristicas: agregar las nuevas ===
+            caracteristicas = []
+            categoria = None
+            if departamento == 'LLANTAS':
+                caracteristicas = extractor_llantas.extraer(descripcion)
+                categoria = 'llanta'
+            elif departamento in ('LUBRICACIÓN', 'QUIMICOS/ADITIVOS'):
+                caracteristicas = extractor_aceites.extraer(descripcion)
+                categoria = 'aceite'
+            elif marca in MARCAS_ACUMULADORES:
+                caracteristicas = extractor_acumuladores.extraer(descripcion)
+                categoria = 'acumulador'
+
+            if caracteristicas:
+                cursor.execute("""
+                    SELECT clave, valor FROM caracteristicas_producto
+                    WHERE producto_id = ? AND categoria = ?
+                """, (producto_id, categoria))
+                caracs_existentes = {(r[0], r[1]) for r in cursor.fetchall()}
+
+                for carac in caracteristicas:
+                    if (carac.clave, carac.valor) in caracs_existentes:
+                        continue
+                    cursor.execute("""
+                        INSERT INTO caracteristicas_producto
+                        (producto_id, categoria, clave, valor)
+                        VALUES (?, ?, ?, ?)
+                    """, (producto_id, categoria, carac.clave, carac.valor))
+                    caracs_existentes.add((carac.clave, carac.valor))
+                    stats['caracteristicas_nuevas'] += 1
+
+            stats['productos_procesados'] += 1
+
+        except Exception as e:
+            stats['errores'].append(f"SKU {sku}: {str(e)}")
+
+        if idx % 200 == 0:
+            print(f"  Procesados: {idx}/{len(productos)}...")
+
+    # === Intercambiables: recalcular solo para los afectados ===
+    print("\n  Calculando intercambiables (descripciones cambiadas)...")
+    stats['intercambiables_nuevos'] = _calcular_intercambiables(cursor, ids_cambiados)
+
+    return stats
+
+
 def procesar_nuevos_inline(cursor, ids_nuevos: list):
     """
     Procesa productos nuevos directamente sobre el mismo cursor/conexión.
@@ -368,10 +542,11 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # Obtener SKUs y IDs de la BD
-    cursor.execute("SELECT id, sku FROM productos")
+    # Obtener SKUs, IDs y descripcion actual de la BD
+    cursor.execute("SELECT id, sku, descripcion_original FROM productos")
     rows_db = cursor.fetchall()
     sku_to_id = {row[1]: row[0] for row in rows_db}
+    sku_to_desc_bd = {row[1]: (row[2] or '') for row in rows_db}
     sku_norm_to_db = {normalizar_sku(s): s for s in sku_to_id.keys()}
     print(f"Productos en BD: {len(sku_to_id):,}")
 
@@ -388,6 +563,7 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
     nuevos_sin_inventario = 0
     nuevos_compra_vieja = 0
     ids_nuevos = []
+    ids_descripcion_cambiada = []
 
     print(f"\nActualizando precios e inventario...\n")
 
@@ -464,6 +640,16 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
         if precio_pub == 0.0:
             precio_cero += 1
 
+        # === Detectar descripcion cambiada ===
+        desc_bd = sku_to_desc_bd.get(sku_db, '')
+        desc_excel = datos_nuevos[sku_norm]['descripcion_original']
+        if desc_excel and ' '.join(desc_bd.strip().upper().split()) != ' '.join(desc_excel.strip().upper().split()):
+            cursor.execute(
+                "UPDATE productos SET descripcion_original = ? WHERE id = ?",
+                (desc_excel, producto_id)
+            )
+            ids_descripcion_cambiada.append(producto_id)
+
         # Reemplazar inventario por sucursal
         cursor.execute("DELETE FROM inventario WHERE producto_id = ?", (producto_id,))
         for sucursal, cantidad in inv_sucursales.items():
@@ -510,6 +696,27 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
             for err in stats_nuevos['errores'][:5]:
                 print(f"    - {err}")
 
+    # === PROCESAMIENTO DE PRODUCTOS CON DESCRIPCION CAMBIADA ===
+    stats_cambiados = None
+    if ids_descripcion_cambiada:
+        print(f"\n{'='*60}")
+        print(f"PROCESANDO {len(ids_descripcion_cambiada)} PRODUCTOS CON DESCRIPCION CAMBIADA...")
+        print(f"{'='*60}")
+
+        stats_cambiados = procesar_descripciones_cambiadas_inline(cursor, ids_descripcion_cambiada)
+        conn.commit()
+
+        print(f"\n  Productos procesados:       {stats_cambiados['productos_procesados']}")
+        print(f"  Nombres actualizados:       {stats_cambiados['nombres_actualizados']}")
+        print(f"  SKUs alternos agregados:    {stats_cambiados['skus_alternos_agregados']}")
+        print(f"  Compatibilidades nuevas:    {stats_cambiados['compatibilidades_nuevas']}")
+        print(f"  Características nuevas:     {stats_cambiados['caracteristicas_nuevas']}")
+        print(f"  Intercambiables nuevos:     {stats_cambiados['intercambiables_nuevos']}")
+        if stats_cambiados['errores']:
+            print(f"  Errores: {len(stats_cambiados['errores'])}")
+            for err in stats_cambiados['errores'][:5]:
+                print(f"    - {err}")
+
     # Verificaciones finales
     cursor.execute("SELECT COUNT(*) FROM productos WHERE precio_publico = 0 OR precio_publico IS NULL")
     total_cero_final = cursor.fetchone()[0]
@@ -538,6 +745,7 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
     print("RESUMEN DE ACTUALIZACIÓN")
     print(f"{'='*60}")
     print(f"  Productos actualizados:       {actualizados:,}")
+    print(f"  Descripciones cambiadas:      {len(ids_descripcion_cambiada):,}")
     print(f"  Productos NUEVOS insertados:  {nuevos_insertados:,}")
     print(f"  No encontrados en BD:         {no_encontrados:,}")
     if nuevos_sin_inventario > 0 or nuevos_compra_vieja > 0:
@@ -561,6 +769,15 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
         print(f"    Compatibilidades creadas:   {stats_nuevos.get('compatibilidades_nuevas', 0):,}")
         print(f"    Intercambiables nuevos:     {stats_nuevos.get('intercambiables_nuevos', 0):,}")
         print(f"    Características extraídas:  {stats_nuevos.get('caracteristicas_extraidas', 0):,}")
+
+    if stats_cambiados:
+        print(f"{'─'*60}")
+        print(f"  PROCESAMIENTO DESCRIPCIONES CAMBIADAS:")
+        print(f"    Productos procesados:       {stats_cambiados.get('productos_procesados', 0):,}")
+        print(f"    SKUs alternos agregados:    {stats_cambiados.get('skus_alternos_agregados', 0):,}")
+        print(f"    Compatibilidades nuevas:    {stats_cambiados.get('compatibilidades_nuevas', 0):,}")
+        print(f"    Características nuevas:     {stats_cambiados.get('caracteristicas_nuevas', 0):,}")
+        print(f"    Intercambiables nuevos:     {stats_cambiados.get('intercambiables_nuevos', 0):,}")
 
     print(f"{'='*60}")
 
