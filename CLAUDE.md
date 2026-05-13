@@ -448,6 +448,8 @@ git push
 #### Productos existentes (UPDATE)
 - Actualiza `precio_publico` (col 12) y `precio_mayoreo` (col 13) con precios CON IVA
 - Actualiza `inventario_total` (col 21) y tabla `inventario` por sucursal (cols 15-20)
+- **Marca / Departamento / Grupo**: si cambian en el Excel respecto a la BD, se actualizan
+  (correcciones de marca tipo "GENERICO → ESAEVER" o "RELUVSA → PMC").
 - Productos en BD que NO están en el Excel → inventario se pone en 0
 - **Descripción cambiada (modo MERGE)**: si la columna Descripcion del Excel difiere de
   `descripcion_original` en BD, el script:

@@ -542,11 +542,12 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # Obtener SKUs, IDs y descripcion actual de la BD
-    cursor.execute("SELECT id, sku, descripcion_original FROM productos")
+    # Obtener SKUs, IDs y campos clave actuales de la BD
+    cursor.execute("SELECT id, sku, descripcion_original, marca, departamento, grupo_producto FROM productos")
     rows_db = cursor.fetchall()
     sku_to_id = {row[1]: row[0] for row in rows_db}
     sku_to_desc_bd = {row[1]: (row[2] or '') for row in rows_db}
+    sku_to_meta_bd = {row[1]: {'marca': row[3] or '', 'depto': row[4] or '', 'grupo': row[5] or ''} for row in rows_db}
     sku_norm_to_db = {normalizar_sku(s): s for s in sku_to_id.keys()}
     print(f"Productos en BD: {len(sku_to_id):,}")
 
@@ -564,6 +565,9 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
     nuevos_compra_vieja = 0
     ids_nuevos = []
     ids_descripcion_cambiada = []
+    marcas_actualizadas = 0
+    deptos_actualizados = 0
+    grupos_actualizados = 0
 
     print(f"\nActualizando precios e inventario...\n")
 
@@ -649,6 +653,22 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
                 (desc_excel, producto_id)
             )
             ids_descripcion_cambiada.append(producto_id)
+
+        # === Detectar marca / departamento / grupo cambiados ===
+        meta_bd = sku_to_meta_bd.get(sku_db, {})
+        marca_excel = datos_nuevos[sku_norm]['marca']
+        depto_excel = datos_nuevos[sku_norm]['departamento']
+        grupo_excel = datos_nuevos[sku_norm]['grupo_producto']
+
+        if marca_excel and marca_excel.upper() != meta_bd.get('marca', '').upper():
+            cursor.execute("UPDATE productos SET marca = ? WHERE id = ?", (marca_excel, producto_id))
+            marcas_actualizadas += 1
+        if depto_excel and depto_excel.upper() != meta_bd.get('depto', '').upper():
+            cursor.execute("UPDATE productos SET departamento = ? WHERE id = ?", (depto_excel, producto_id))
+            deptos_actualizados += 1
+        if grupo_excel and grupo_excel.upper() != meta_bd.get('grupo', '').upper():
+            cursor.execute("UPDATE productos SET grupo_producto = ? WHERE id = ?", (grupo_excel, producto_id))
+            grupos_actualizados += 1
 
         # Reemplazar inventario por sucursal
         cursor.execute("DELETE FROM inventario WHERE producto_id = ?", (producto_id,))
@@ -746,6 +766,9 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
     print(f"{'='*60}")
     print(f"  Productos actualizados:       {actualizados:,}")
     print(f"  Descripciones cambiadas:      {len(ids_descripcion_cambiada):,}")
+    print(f"  Marcas actualizadas:          {marcas_actualizadas:,}")
+    print(f"  Departamentos actualizados:   {deptos_actualizados:,}")
+    print(f"  Grupos actualizados:          {grupos_actualizados:,}")
     print(f"  Productos NUEVOS insertados:  {nuevos_insertados:,}")
     print(f"  No encontrados en BD:         {no_encontrados:,}")
     if nuevos_sin_inventario > 0 or nuevos_compra_vieja > 0:
