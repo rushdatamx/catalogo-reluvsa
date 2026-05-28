@@ -471,10 +471,10 @@ async def exportar_excel(
         bottom=Side(style='thin'),
     )
 
-    headers = ["Nuevo", "SKU", "Imagen", "Grupo Producto", "Compatibilidades",
-               "Precio Público", "Precio Mayoreo", "Intercambiables"]
+    headers = ["Nuevo", "SKU", "Imagen", "Grupo Producto", "Nombre Producto",
+               "Compatibilidades", "Precio Público", "Precio Mayoreo", "Intercambiables"]
 
-    col_widths = [8, 18, 12, 22, 45, 16, 16, 35]
+    col_widths = [8, 18, 12, 22, 40, 45, 16, 16, 35]
 
     for col_idx, (header, width) in enumerate(zip(headers, col_widths), 1):
         cell = ws.cell(row=1, column=col_idx, value=header)
@@ -525,27 +525,33 @@ async def exportar_excel(
         cell.alignment = wrap_alignment
         cell.border = thin_border
 
-        # Col E: Compatibilidades (multiline)
-        compat_lines = product.get('compatibilidades_list', [])
-        cell = ws.cell(row=row_idx, column=5, value="\n".join(compat_lines))
+        # Col E: Nombre Producto (fallback a descripcion_original)
+        nombre = product.get('nombre_producto') or product.get('descripcion_original') or ''
+        cell = ws.cell(row=row_idx, column=5, value=nombre)
         cell.alignment = wrap_alignment
         cell.border = thin_border
 
-        # Col F: Precio Público
-        cell = ws.cell(row=row_idx, column=6, value=product.get('precio_publico') or 0)
+        # Col F: Compatibilidades (multiline)
+        compat_lines = product.get('compatibilidades_list', [])
+        cell = ws.cell(row=row_idx, column=6, value="\n".join(compat_lines))
+        cell.alignment = wrap_alignment
+        cell.border = thin_border
+
+        # Col G: Precio Público
+        cell = ws.cell(row=row_idx, column=7, value=product.get('precio_publico') or 0)
         cell.number_format = price_format
         cell.alignment = Alignment(horizontal="right", vertical="center")
         cell.border = thin_border
 
-        # Col G: Precio Mayoreo
-        cell = ws.cell(row=row_idx, column=7, value=product.get('precio_mayoreo') or 0)
+        # Col H: Precio Mayoreo
+        cell = ws.cell(row=row_idx, column=8, value=product.get('precio_mayoreo') or 0)
         cell.number_format = price_format
         cell.alignment = Alignment(horizontal="right", vertical="center")
         cell.border = thin_border
 
-        # Col H: Intercambiables (multiline)
+        # Col I: Intercambiables (multiline)
         intercamb_lines = product.get('intercambiables_list', [])
-        cell = ws.cell(row=row_idx, column=8, value="\n".join(intercamb_lines))
+        cell = ws.cell(row=row_idx, column=9, value="\n".join(intercamb_lines))
         cell.alignment = wrap_alignment
         cell.border = thin_border
 
@@ -729,6 +735,7 @@ async def exportar_pdf(
         Paragraph("<b>Marca</b>", cell_style),
         Paragraph("<b>No. Parte</b>", cell_style),
         Paragraph("<b>Grupo Producto</b>", cell_style),
+        Paragraph("<b>Nombre Producto</b>", cell_style),
         Paragraph("<b>Compatibilidades</b>", cell_style),
         Paragraph("<b>P. Público</b>", cell_style),
         Paragraph("<b>P. Mayoreo</b>", cell_style),
@@ -766,6 +773,9 @@ async def exportar_pdf(
         # Grupo Producto
         grupo = product.get('grupo_producto') or ''
 
+        # Nombre Producto (fallback a descripcion_original)
+        nombre = product.get('nombre_producto') or product.get('descripcion_original') or ''
+
         # Compatibilidades (limit to 5 + "... y X más")
         compat_all = product.get('compatibilidades_list', [])
         if len(compat_all) > 5:
@@ -795,6 +805,7 @@ async def exportar_pdf(
             Paragraph(marca_prod, cell_style),
             Paragraph(num_parte, cell_style),
             Paragraph(grupo, cell_style),
+            Paragraph(nombre, cell_style_small),
             Paragraph(compat_text, cell_style_small),
             Paragraph(precio_pub, cell_style),
             Paragraph(precio_may, cell_style),
@@ -804,14 +815,15 @@ async def exportar_pdf(
 
     # Column widths (landscape letter ~10.5" usable after margins)
     col_widths = [
-        55,   # Imagen
-        60,   # Marca
-        65,   # No. Parte
-        80,   # Grupo
-        140,  # Compatibilidades
-        55,   # P. Público
-        55,   # P. Mayoreo
-        available_width - 55 - 60 - 65 - 80 - 140 - 55 - 55,  # Intercambiables
+        50,   # Imagen
+        50,   # Marca
+        60,   # No. Parte
+        70,   # Grupo
+        110,  # Nombre Producto
+        115,  # Compatibilidades
+        50,   # P. Público
+        50,   # P. Mayoreo
+        available_width - 50 - 50 - 60 - 70 - 110 - 115 - 50 - 50,  # Intercambiables
     ]
 
     table = Table(table_data, colWidths=col_widths, repeatRows=1)
