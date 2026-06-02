@@ -28,6 +28,7 @@ SHEET_NAME = "TODOS LOS PRODUCTOS MAYO"
 
 # Columnas del Excel
 COL_SKU = 0               # Clave
+COL_SKU_REAL = 2          # SKU (número de parte comercial; vacío en ~81% de productos)
 COL_GRUPO = 1             # Grupo -> Nombre
 COL_DEPARTAMENTO = 4      # Departamento -> Nombre
 COL_MARCA = 5             # Marcas Prodcuto -> Nombre
@@ -527,6 +528,7 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
         # Guardar datos adicionales para posible INSERT de producto nuevo
         datos_nuevos[sku] = {
             'sku_original': str(row[COL_SKU]).strip(),
+            'sku_real': limpiar_texto(row[COL_SKU_REAL]) or None,  # col 2; None si viene vacía
             'grupo_producto': limpiar_texto(row[COL_GRUPO]),
             'departamento': limpiar_texto(row[COL_DEPARTAMENTO]),
             'marca': limpiar_texto(row[COL_MARCA]),
@@ -543,11 +545,12 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
     cursor = conn.cursor()
 
     # Obtener SKUs, IDs y campos clave actuales de la BD
-    cursor.execute("SELECT id, sku, descripcion_original, marca, departamento, grupo_producto FROM productos")
+    cursor.execute("SELECT id, sku, descripcion_original, marca, departamento, grupo_producto, sku_real FROM productos")
     rows_db = cursor.fetchall()
     sku_to_id = {row[1]: row[0] for row in rows_db}
     sku_to_desc_bd = {row[1]: (row[2] or '') for row in rows_db}
     sku_to_meta_bd = {row[1]: {'marca': row[3] or '', 'depto': row[4] or '', 'grupo': row[5] or ''} for row in rows_db}
+    sku_to_skureal_bd = {row[1]: (row[6] or '') for row in rows_db}
     sku_norm_to_db = {normalizar_sku(s): s for s in sku_to_id.keys()}
     print(f"Productos en BD: {len(sku_to_id):,}")
 
@@ -568,6 +571,7 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
     marcas_actualizadas = 0
     deptos_actualizados = 0
     grupos_actualizados = 0
+    skus_reales_actualizados = 0
 
     print(f"\nActualizando precios e inventario...\n")
 
@@ -597,12 +601,13 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
 
             cursor.execute("""
                 INSERT INTO productos (
-                    sku, departamento, marca, descripcion_original,
+                    sku, sku_real, departamento, marca, descripcion_original,
                     precio_publico, precio_mayoreo, imagen_url,
                     inventario_total, grupo_producto, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 sku_insert,
+                datos['sku_real'],
                 datos['departamento'] or None,
                 datos['marca'] or None,
                 datos['descripcion_original'] or None,
@@ -669,6 +674,13 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
         if grupo_excel and grupo_excel.upper() != meta_bd.get('grupo', '').upper():
             cursor.execute("UPDATE productos SET grupo_producto = ? WHERE id = ?", (grupo_excel, producto_id))
             grupos_actualizados += 1
+
+        # === SKU real (col 2): solo se escribe si el Excel lo trae poblado ===
+        # Nunca se borra un sku_real existente con un valor vacío del Excel.
+        sku_real_excel = datos_nuevos[sku_norm]['sku_real']
+        if sku_real_excel and sku_real_excel != sku_to_skureal_bd.get(sku_db, ''):
+            cursor.execute("UPDATE productos SET sku_real = ? WHERE id = ?", (sku_real_excel, producto_id))
+            skus_reales_actualizados += 1
 
         # Reemplazar inventario por sucursal
         cursor.execute("DELETE FROM inventario WHERE producto_id = ?", (producto_id,))
@@ -769,6 +781,7 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
     print(f"  Marcas actualizadas:          {marcas_actualizadas:,}")
     print(f"  Departamentos actualizados:   {deptos_actualizados:,}")
     print(f"  Grupos actualizados:          {grupos_actualizados:,}")
+    print(f"  SKUs reales actualizados:     {skus_reales_actualizados:,}")
     print(f"  Productos NUEVOS insertados:  {nuevos_insertados:,}")
     print(f"  No encontrados en BD:         {no_encontrados:,}")
     if nuevos_sin_inventario > 0 or nuevos_compra_vieja > 0:

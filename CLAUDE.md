@@ -85,7 +85,8 @@ catalogo-reluvsa/
 -- Productos principales (22,178 registros)
 CREATE TABLE productos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    sku TEXT UNIQUE NOT NULL,
+    sku TEXT UNIQUE NOT NULL,          -- "Clave" del Excel (col 0), código interno
+    sku_real TEXT,                     -- "SKU" comercial del Excel (col 2); ~19% poblado
     departamento TEXT,
     marca TEXT,
     descripcion_original TEXT,
@@ -267,6 +268,7 @@ GET /api/images/{sku}
 # Exportar (con imágenes embebidas)
 GET /api/exportar/excel?[mismos filtros que /api/productos]
     # Genera Excel (.xlsx) con thumbnails 75x75, compatibilidades, intercambiables
+    # Columna SKU = sku_real (comercial) con fallback a sku (Clave) si está vacío
     # Máx 500 productos | Timeout imagen: 5s | Concurrencia: 10
 GET /api/exportar/pdf?[mismos filtros que /api/productos]
     # Genera PDF landscape con thumbnails 50x50, filas alternadas
@@ -402,7 +404,7 @@ Los datos se actualizan desde un archivo Excel (.xlsx) que RELUVSA exporta peri�
 |-----|---------|-----|
 | 0 | Clave | SKU del producto |
 | 1 | Grupo -> Nombre | grupo_producto (para nuevos) |
-| 2 | SKU | (ignorado - duplicado) |
+| 2 | SKU | sku_real (número de parte comercial; vacío en ~81%) |
 | 3 | Codigo de Barras | (ignorado) |
 | 4 | Departamento -> Nombre | departamento (para nuevos) |
 | 5 | Marcas Prodcuto -> Nombre | marca (para nuevos) |
@@ -450,6 +452,9 @@ git push
 - Actualiza `inventario_total` (col 21) y tabla `inventario` por sucursal (cols 15-20)
 - **Marca / Departamento / Grupo**: si cambian en el Excel respecto a la BD, se actualizan
   (correcciones de marca tipo "GENERICO → ESAEVER" o "RELUVSA → PMC").
+- **SKU comercial (`sku_real`, col 2)**: si el Excel lo trae poblado, se escribe en `sku_real`.
+  Nunca se borra un `sku_real` existente con un valor vacío del Excel.
+  (Para poblar productos ya existentes de una sola vez: `python3 scripts/backfill_sku_real.py`.)
 - Productos en BD que NO están en el Excel → inventario se pone en 0
 - **Descripción cambiada (modo MERGE)**: si la columna Descripcion del Excel difiere de
   `descripcion_original` en BD, el script:

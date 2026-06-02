@@ -4,7 +4,6 @@ Endpoints para exportar catálogo a Excel y PDF con imágenes embebidas.
 import asyncio
 import datetime
 import io
-import json
 import math
 import os
 import sqlite3
@@ -225,7 +224,7 @@ def _build_filtered_query(
 
     select_sql = f"""
         SELECT DISTINCT
-            p.id, p.sku, p.departamento, p.marca, p.descripcion_original,
+            p.id, p.sku, p.sku_real, p.departamento, p.marca, p.descripcion_original,
             p.nombre_producto, p.tipo_producto, p.precio_publico, p.precio_mayoreo,
             p.imagen_url, p.inventario_total, p.grupo_producto, p.skus_alternos,
             CASE WHEN p.created_at >= datetime('now', '-60 days') THEN 1 ELSE 0 END as es_nuevo
@@ -329,6 +328,12 @@ async def _download_images_bulk(skus: List[str]) -> Dict[str, bytes]:
         await asyncio.gather(*tasks)
 
     return results
+
+
+def _sku_mostrado(product: Dict[str, Any]) -> str:
+    """SKU comercial (sku_real) con fallback a la Clave (sku) cuando está vacío."""
+    sku_real = (product.get('sku_real') or '').strip()
+    return sku_real if sku_real else (product.get('sku') or '')
 
 
 def _resize_to_thumbnail(image_bytes: bytes, size: tuple) -> bytes:
@@ -500,8 +505,8 @@ async def exportar_excel(
         cell.alignment = center_alignment
         cell.border = thin_border
 
-        # Col B: SKU
-        cell = ws.cell(row=row_idx, column=2, value=product['sku'])
+        # Col B: SKU (comercial real; fallback a Clave si está vacío)
+        cell = ws.cell(row=row_idx, column=2, value=_sku_mostrado(product))
         cell.alignment = Alignment(vertical="center")
         cell.border = thin_border
 
@@ -759,16 +764,8 @@ async def exportar_pdf(
         # Marca
         marca_prod = product.get('marca') or ''
 
-        # Número de parte (primer sku alterno, fallback a sku/clave)
-        num_parte = sku
-        skus_alt_raw = product.get('skus_alternos')
-        if skus_alt_raw:
-            try:
-                skus_alt = json.loads(skus_alt_raw) if isinstance(skus_alt_raw, str) else skus_alt_raw
-                if skus_alt and len(skus_alt) > 0:
-                    num_parte = skus_alt[0]
-            except (ValueError, TypeError):
-                pass
+        # Número de parte: SKU comercial real con fallback a la Clave
+        num_parte = _sku_mostrado(product)
 
         # Grupo Producto
         grupo = product.get('grupo_producto') or ''

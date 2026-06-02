@@ -203,6 +203,14 @@ def init_database():
             pass  # columna ya existe
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_productos_grupo ON productos(grupo_producto)")
 
+        # Columna sku_real: número de parte comercial (col 2 "SKU" del Excel).
+        # Distinto de la columna sku, que guarda la "Clave" interna (col 0).
+        # Solo ~19% de productos lo tienen; cuando está vacío se usa sku como fallback.
+        try:
+            cursor.execute("ALTER TABLE productos ADD COLUMN sku_real TEXT")
+        except sqlite3.OperationalError:
+            pass  # columna ya existe
+
         print("Base de datos inicializada correctamente")
 
 
