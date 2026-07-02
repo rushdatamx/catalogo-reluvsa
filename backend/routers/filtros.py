@@ -29,6 +29,34 @@ def get_departamentos():
         return FiltroOpciones(valores=valores, total=len(valores))
 
 
+@router.get("/departamentos-populares")
+def get_departamentos_populares(
+    limit: int = Query(8, ge=1, le=20, description="Número de departamentos a devolver"),
+    con_inventario: bool = Query(True, description="Contar solo productos disponibles"),
+):
+    """Departamentos con más productos, para la barra de categorías estilo Amazon.
+
+    Ordenados por cantidad de productos (el más grande primero).
+    Devuelve [{departamento, total}] listo para armar la barra de navegación.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        inv = "AND inventario_total > 0" if con_inventario else ""
+        cursor.execute(f"""
+            SELECT departamento, COUNT(*) as total
+            FROM productos
+            WHERE departamento IS NOT NULL AND departamento != ''
+              {inv}
+            GROUP BY departamento
+            ORDER BY total DESC
+            LIMIT ?
+        """, [limit])
+        return [
+            {"departamento": row["departamento"], "total": row["total"]}
+            for row in cursor.fetchall()
+        ]
+
+
 @router.get("/marcas-producto", response_model=FiltroOpciones)
 def get_marcas_producto(
     departamento: Optional[str] = Query(None, description="Filtrar por departamento")

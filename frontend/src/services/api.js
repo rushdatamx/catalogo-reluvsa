@@ -40,6 +40,7 @@ export const getFiltros = {
   motores: (params) => api.get('/filtros/motores', { params }),
   tiposProducto: (params) => api.get('/filtros/tipos-producto', { params }),
   gruposProducto: (params) => api.get('/filtros/grupos-producto', { params }),
+  departamentosPopulares: (params) => api.get('/filtros/departamentos-populares', { params }),
 
   // Filtros para LLANTAS
   anchosLlanta: (params) => api.get('/filtros/llantas/anchos', { params }),

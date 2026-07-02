@@ -4,32 +4,7 @@ import { getTopVendidos, getTopVendidosCategorias } from '../services/api';
 import ProductImage from './ProductImage';
 import { useCart, puedeComprar } from '../context/CartContext';
 import { cn } from '../lib/utils';
-
-// Nombres cortos y amigables para las pestañas de categoría (estilo MercadoLibre).
-// Si un departamento no está aquí, se muestra tal cual (capitalizado).
-const NOMBRE_CATEGORIA = {
-  'LUBRICACIÓN': 'Aceites y lubricantes',
-  'AFINACION': 'Afinación',
-  'SISTEMA ELECTRICO & SENSORES': 'Eléctrico y baterías',
-  'ACCESORIO': 'Accesorios',
-  'ENFRIAMIENTO Y BANDAS': 'Enfriamiento y bandas',
-  'LLANTAS': 'Llantas',
-  'PARTES DE MOTOR': 'Partes de motor',
-  'QUIMICOS,ADITIVOS,AGUA PARA BATERIA,EMBE': 'Químicos y aditivos',
-  'CLUTCH': 'Clutch',
-  'SUSPENSION': 'Suspensión',
-  'FRENOS': 'Frenos',
-  'TRANSMISION MANUAL & EJE TRASERO': 'Transmisión',
-  'OTROS': 'Otros',
-  'CASCO USADO CHICO Y GRANDE': 'Cascos',
-};
-
-const nombreCategoria = (dep) => {
-  if (!dep) return '';
-  if (NOMBRE_CATEGORIA[dep]) return NOMBRE_CATEGORIA[dep];
-  // Capitalizar la primera letra de cada palabra
-  return dep.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
-};
+import { nombreCategoria } from '../lib/categorias';
 
 // Badge de ranking: medalla para top 3, número para el resto.
 function BadgeRanking({ rank }) {

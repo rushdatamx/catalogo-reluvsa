@@ -9,6 +9,7 @@ import ProductImage, { getImageUrl } from './components/ProductImage';
 // Componentes de Filtros
 import FiltrosCascada from './components/FiltrosCascada';
 import TopVendidos from './components/TopVendidos';
+import BarraCategorias from './components/BarraCategorias';
 
 // Autenticación
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -204,6 +205,35 @@ function AppContent() {
   const hayFiltrosActivos = Object.entries(filtros).some(([, v]) => v && v !== false);
   const vistaPortada = !hayFiltrosActivos && busqueda.trim().length < 2;
 
+  // Barra de categorías (estilo Amazon): al elegir un departamento, filtra el catálogo.
+  const handleSeleccionarDepartamento = (departamento) => {
+    setBusqueda('');
+    setFiltros(prev => ({
+      ...prev,
+      departamento: prev.departamento === departamento ? '' : departamento,
+    }));
+    // Llevar la vista al inicio de los resultados
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // "Más vendidos" en la barra: volver a la portada (donde vive la vitrina) y llevar el scroll ahí.
+  const handleIrMasVendidos = () => {
+    const yaEnPortada = !hayFiltrosActivos && busqueda.trim().length < 2;
+    if (!yaEnPortada) {
+      // Limpiar filtros y búsqueda para que reaparezca la vitrina, luego hacer scroll
+      setBusqueda('');
+      setFiltros(prev => ({ ...prev, departamento: '' }));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    const el = document.getElementById('vitrina-mas-vendidos');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
   // Export helpers
   const buildExportParams = () => {
     const params = {};
@@ -342,6 +372,13 @@ function AppContent() {
             />
           </div>
         </div>
+
+        {/* Barra de categorías estilo Amazon (debajo del buscador) */}
+        <BarraCategorias
+          departamentoActivo={filtros.departamento}
+          onSeleccionarDepartamento={handleSeleccionarDepartamento}
+          onMasVendidos={handleIrMasVendidos}
+        />
       </header>
 
       {/* Contenido Principal */}
@@ -359,7 +396,9 @@ function AppContent() {
           <section className="flex-1 min-w-0">
             {/* Vitrina de más vendidos (solo en portada, sin filtros/búsqueda) */}
             {vistaPortada && (
-              <TopVendidos onProductoClick={setProductoSeleccionado} />
+              <div id="vitrina-mas-vendidos" className="scroll-mt-40">
+                <TopVendidos onProductoClick={setProductoSeleccionado} />
+              </div>
             )}
 
             {/* Header de resultados */}
