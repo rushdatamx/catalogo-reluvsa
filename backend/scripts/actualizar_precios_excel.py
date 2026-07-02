@@ -24,7 +24,7 @@ import openpyxl
 # Rutas
 DB_PATH = Path(__file__).parent.parent / "data" / "catalogo.db"
 EXCEL_PATH = Path(__file__).parent.parent.parent / "data" / "limpieza-catalogo.xlsx"
-SHEET_NAME = "TODOS LOS PRODUCTOS JUNIO"
+SHEET_NAME = "TODOS LOS PRODUCTOS JULIO"
 
 # Columnas del Excel
 COL_SKU = 0               # Clave
@@ -34,8 +34,8 @@ COL_DEPARTAMENTO = 4      # Departamento -> Nombre
 COL_MARCA = 5             # Marcas Prodcuto -> Nombre
 COL_ULTIMA_COMPRA = 7     # Última Compra
 COL_DESCRIPCION = 9       # Descripcion
-COL_PRECIO_PUBLICO = 12   # Precio abierto 3 C/IVA (público)
-COL_PRECIO_MAYOREO = 13   # Precio abierto 5 C/IVA (mayoreo)
+COL_PRECIO_PUBLICO = 10   # Precio Tres C/IVA (público, más alto) - col K
+COL_PRECIO_MAYOREO = 11   # Precio Cinco C/IVA (mayoreo) - col L
 COL_IMAGEN_URL = 14       # Variant Scr
 COL_INVENTARIO_TOTAL = 21 # Total Almacenes
 
