@@ -79,4 +79,11 @@ export const exportarPDF = (params) => api.get('/exportar/pdf', {
 // Stats
 export const getStats = () => api.get('/stats');
 
+// Pagos / Checkout
+// items: [{ sku, cantidad }]
+export const crearCheckout = (items, sucursal_pickup) =>
+  api.post('/checkout', { items, tipo_entrega: 'pickup', sucursal_pickup });
+export const getMisPedidos = () => api.get('/orders/mis-pedidos');
+export const getOrden = (orderId) => api.get(`/orders/${orderId}`);
+
 export default api;

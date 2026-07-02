@@ -65,3 +65,11 @@ coverage/
 # Temp files
 *.tmp
 *.temp
+
+# BD de pedidos/órdenes de Stripe: vive en volumen persistente, NUNCA en el repo
+backend/data/pedidos.db
+backend/data/pedidos.db-*
+data/pedidos.db
+data/pedidos.db-*
+pedidos.db
+pedidos.db-*

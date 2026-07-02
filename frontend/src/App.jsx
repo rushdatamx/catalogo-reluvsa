@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, Package, Car, Link2, Filter, X, ChevronDown, CheckCircle, XCircle, AlertCircle, Tag, Calendar, Gauge, Truck, Settings, Save, LogOut, User, ImageOff, FileSpreadsheet, FileText, Download, Loader2 } from 'lucide-react';
+import { Search, Package, Car, Link2, Filter, X, ChevronDown, CheckCircle, XCircle, AlertCircle, Tag, Calendar, Gauge, Truck, Settings, Save, LogOut, User, ImageOff, FileSpreadsheet, FileText, Download, Loader2, ShoppingCart, Plus } from 'lucide-react';
 import { getProductos, getStats, getProducto, actualizarEspecificacionesManuales, exportarExcel, exportarPDF, API_BASE } from './services/api';
 import { cn } from './lib/utils';
 
@@ -64,8 +64,14 @@ import FiltrosCascada from './components/FiltrosCascada';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './components/Login';
 
+// Carrito / Compra
+import { CartProvider, useCart, puedeComprar } from './context/CartContext';
+import CartDrawer from './components/CartDrawer';
+import OrderResult from './components/OrderResult';
+
 function AppContent() {
   const { user, logout, isAdmin } = useAuth();
+  const { agregar, setAbierto, totalItems } = useCart();
   const [filtros, setFiltros] = useState({
     departamento: '',
     marca: '',
@@ -337,6 +343,19 @@ function AppContent() {
                   )}
                 </div>
               )}
+              {/* Carrito */}
+              <button
+                onClick={() => setAbierto(true)}
+                className="relative flex items-center gap-1 bg-black/10 hover:bg-black/20 px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
+                aria-label="Abrir carrito"
+              >
+                <ShoppingCart size={16} />
+                {totalItems > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-reluvsa-red text-white text-[10px] font-bold min-w-[18px] h-[18px] flex items-center justify-center rounded-full px-1">
+                    {totalItems}
+                  </span>
+                )}
+              </button>
               {/* Usuario y Logout */}
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-2 bg-black/10 px-3 py-1.5 rounded-full text-sm font-medium">
@@ -508,6 +527,27 @@ function AppContent() {
                             </span>
                           )}
                         </div>
+
+                        {/* Botón comprar / AGOTADO */}
+                        <div className="mt-2">
+                          {puedeComprar(producto) ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                agregar(producto, 1);
+                                setAbierto(true);
+                              }}
+                              className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-reluvsa-yellow text-reluvsa-black text-xs font-semibold rounded-lg hover:bg-yellow-400 transition-colors"
+                            >
+                              <Plus size={14} />
+                              Agregar al carrito
+                            </button>
+                          ) : (
+                            <div className="w-full text-center py-1.5 bg-notion-bg-subtle text-notion-text-secondary text-xs font-semibold rounded-lg">
+                              AGOTADO
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </article>
@@ -644,6 +684,25 @@ function AppContent() {
                     </div>
                   </div>
                   <p className="text-xs text-notion-text-secondary mt-1">Precios incluyen IVA</p>
+
+                  {/* Botón comprar / AGOTADO */}
+                  {puedeComprar(detalleProducto) ? (
+                    <button
+                      onClick={() => {
+                        agregar(detalleProducto, 1);
+                        setProductoSeleccionado(null);
+                        setAbierto(true);
+                      }}
+                      className="w-full flex items-center justify-center gap-2 py-3 bg-reluvsa-yellow text-reluvsa-black font-semibold rounded-lg hover:bg-yellow-400 transition-colors"
+                    >
+                      <ShoppingCart size={18} />
+                      Agregar al carrito
+                    </button>
+                  ) : (
+                    <div className="w-full text-center py-3 bg-notion-bg-subtle text-notion-text-secondary font-semibold rounded-lg">
+                      {detalleProducto.precio_publico > 0 ? 'AGOTADO' : 'Consultar precio'}
+                    </div>
+                  )}
 
                   {/* Inventario */}
                   {detalleProducto.inventario_sucursales?.length > 0 && (
@@ -829,6 +888,9 @@ function AppContent() {
           </div>
         </div>
       )}
+
+      {/* Drawer del Carrito */}
+      <CartDrawer />
     </div>
   );
 }
@@ -836,7 +898,9 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider>
-      <AppWithAuth />
+      <CartProvider>
+        <AppWithAuth />
+      </CartProvider>
     </AuthProvider>
   );
 }
@@ -857,6 +921,12 @@ function AppWithAuth() {
 
   if (!user) {
     return <Login />;
+  }
+
+  // Rutas de resultado de pago (behind login, sin router externo).
+  const path = window.location.pathname;
+  if (path === '/success' || path === '/cancel') {
+    return <OrderResult tipo={path === '/success' ? 'success' : 'cancel'} />;
   }
 
   return <AppContent />;
