@@ -26,6 +26,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 
 from database import get_db
+from pedidos_db import get_pedidos_db, init_pedidos_db
 from routers.auth import get_current_user, UserInfo
 
 router = APIRouter(prefix="/api", tags=["pagos"])
@@ -43,49 +44,10 @@ CURRENCY = "mxn"
 SUCURSALES_PICKUP = {"Carrera", "Berriozabal", "CEDIS", "31 Juarez", "E-commerce"}
 
 
-# --- Esquema de BD (idempotente) --------------------------------------------
-def init_pagos_tables():
-    """Crea las tablas de pedidos si no existen. Se llama al importar el router
-    y también en el lifespan de la app, para que funcione aunque la BD se copie
-    desde el repo en producción (Railway)."""
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS orders (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                stripe_session_id TEXT UNIQUE,
-                stripe_payment_intent TEXT,
-                username TEXT NOT NULL,
-                tipo_entrega TEXT NOT NULL DEFAULT 'pickup',   -- 'pickup' | 'envio' (futuro)
-                sucursal_pickup TEXT,                          -- sucursal donde recoge
-                direccion_envio TEXT,                          -- JSON, reservado para envío futuro
-                costo_envio REAL DEFAULT 0,                    -- reservado para envío futuro
-                subtotal REAL NOT NULL DEFAULT 0,
-                total REAL NOT NULL DEFAULT 0,
-                estado TEXT NOT NULL DEFAULT 'pendiente',      -- 'pendiente' | 'pagado' | 'cancelado' | 'fallido'
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                paid_at TIMESTAMP
-            )
-        """)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS order_items (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                order_id INTEGER NOT NULL,
-                producto_id INTEGER,
-                sku TEXT NOT NULL,
-                nombre TEXT,
-                cantidad INTEGER NOT NULL,
-                precio_unitario REAL NOT NULL,
-                FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
-            )
-        """)
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_orders_username ON orders(username)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_orders_session ON orders(stripe_session_id)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id)")
-
-
-# Garantizar tablas al importar el router.
-init_pagos_tables()
+# Garantizar las tablas de la BD de pedidos (separada de catalogo.db) al importar.
+# Ver pedidos_db.py: las órdenes viven en un volumen persistente para que las
+# actualizaciones de catálogo (que sobrescriben catalogo.db) NO las borren.
+init_pedidos_db()
 
 
 # --- Modelos ----------------------------------------------------------------
@@ -189,17 +151,20 @@ def crear_checkout(data: CheckoutRequest, user: UserInfo = Depends(get_current_u
                 "precio_unitario": precio,
             })
 
-        total = subtotal  # sin costo de envío por ahora (pickup)
+    total = subtotal  # sin costo de envío por ahora (pickup)
 
-        # Crear la orden en estado 'pendiente' ANTES de Stripe, para tener order_id.
-        cursor.execute(
+    # Crear la orden en la BD de PEDIDOS (separada del catálogo), estado 'pendiente'
+    # ANTES de Stripe, para tener order_id.
+    with get_pedidos_db() as pconn:
+        pcursor = pconn.cursor()
+        pcursor.execute(
             """INSERT INTO orders (username, tipo_entrega, sucursal_pickup, subtotal, total, estado)
                VALUES (?, 'pickup', ?, ?, ?, 'pendiente')""",
             (user.username, data.sucursal_pickup, subtotal, total),
         )
-        order_id = cursor.lastrowid
+        order_id = pcursor.lastrowid
         for it in order_items_data:
-            cursor.execute(
+            pcursor.execute(
                 """INSERT INTO order_items (order_id, producto_id, sku, nombre, cantidad, precio_unitario)
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 (order_id, it["producto_id"], it["sku"], it["nombre"], it["cantidad"], it["precio_unitario"]),
@@ -217,13 +182,13 @@ def crear_checkout(data: CheckoutRequest, user: UserInfo = Depends(get_current_u
         )
     except stripe.StripeError as e:
         # Marcar la orden como fallida y devolver error.
-        with get_db() as conn:
-            conn.execute("UPDATE orders SET estado = 'fallido' WHERE id = ?", (order_id,))
+        with get_pedidos_db() as pconn:
+            pconn.execute("UPDATE orders SET estado = 'fallido' WHERE id = ?", (order_id,))
         raise HTTPException(status_code=502, detail=f"Error creando sesión de pago: {str(e)}")
 
     # Guardar el session_id en la orden.
-    with get_db() as conn:
-        conn.execute(
+    with get_pedidos_db() as pconn:
+        pconn.execute(
             "UPDATE orders SET stripe_session_id = ? WHERE id = ?",
             (session.id, order_id),
         )
@@ -267,37 +232,47 @@ async def stripe_webhook(request: Request):
 
 
 def _marcar_orden_pagada(session: dict):
-    """Marca la orden como pagada y descuenta inventario. Idempotente: si la orden
-    ya está pagada, no hace nada."""
+    """Marca la orden como pagada (en pedidos.db) y descuenta inventario (en
+    catalogo.db). Idempotente: si la orden ya está pagada, no hace nada.
+
+    Nota sobre inventario: el descuento se aplica sobre catalogo.db para no vender
+    de más entre actualizaciones. Cuando el usuario actualiza precios/inventario
+    con el Excel, ese valor real de RELUVSA vuelve a mandar (Excel = fuente de verdad)."""
     session_id = session.get("id")
     payment_intent = session.get("payment_intent")
 
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, estado FROM orders WHERE stripe_session_id = ?", (session_id,))
-        order = cursor.fetchone()
+    # 1) Leer la orden y sus items desde la BD de pedidos.
+    with get_pedidos_db() as pconn:
+        pcursor = pconn.cursor()
+        pcursor.execute("SELECT id, estado FROM orders WHERE stripe_session_id = ?", (session_id,))
+        order = pcursor.fetchone()
         if order is None:
             return  # orden desconocida (no crear nada desde el webhook)
         if order["estado"] == "pagado":
             return  # idempotencia: ya procesada
 
         order_id = order["id"]
-
-        # Descontar inventario_total por cada item (sin bajar de 0).
-        cursor.execute(
+        pcursor.execute(
             "SELECT producto_id, cantidad FROM order_items WHERE order_id = ?",
             (order_id,),
         )
-        for item in cursor.fetchall():
-            if item["producto_id"]:
+        items = [(row["producto_id"], row["cantidad"]) for row in pcursor.fetchall()]
+
+    # 2) Descontar inventario_total en el CATÁLOGO (sin bajar de 0).
+    with get_db() as conn:
+        cursor = conn.cursor()
+        for producto_id, cantidad in items:
+            if producto_id:
                 cursor.execute(
                     """UPDATE productos
                        SET inventario_total = MAX(0, COALESCE(inventario_total, 0) - ?)
                        WHERE id = ?""",
-                    (item["cantidad"], item["producto_id"]),
+                    (cantidad, producto_id),
                 )
 
-        cursor.execute(
+    # 3) Marcar la orden como pagada en la BD de pedidos.
+    with get_pedidos_db() as pconn:
+        pconn.execute(
             """UPDATE orders
                SET estado = 'pagado', paid_at = CURRENT_TIMESTAMP, stripe_payment_intent = ?
                WHERE id = ?""",
@@ -309,8 +284,8 @@ def _actualizar_estado_por_session(session_id: str, estado: str):
     """Actualiza el estado de una orden por session_id, salvo que ya esté pagada."""
     if not session_id:
         return
-    with get_db() as conn:
-        conn.execute(
+    with get_pedidos_db() as pconn:
+        pconn.execute(
             "UPDATE orders SET estado = ? WHERE stripe_session_id = ? AND estado != 'pagado'",
             (estado, session_id),
         )
@@ -319,7 +294,7 @@ def _actualizar_estado_por_session(session_id: str, estado: str):
 @router.get("/orders/mis-pedidos")
 def mis_pedidos(user: UserInfo = Depends(get_current_user)):
     """Lista los pedidos del usuario autenticado."""
-    with get_db() as conn:
+    with get_pedidos_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
             """SELECT id, stripe_session_id, tipo_entrega, sucursal_pickup,
@@ -341,7 +316,7 @@ def mis_pedidos(user: UserInfo = Depends(get_current_user)):
 def obtener_orden(order_id: int, user: UserInfo = Depends(get_current_user)):
     """Detalle de una orden. El usuario solo puede ver sus propias órdenes
     (admin puede ver cualquiera)."""
-    with get_db() as conn:
+    with get_pedidos_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
             """SELECT id, username, stripe_session_id, tipo_entrega, sucursal_pickup,
