@@ -43,6 +43,7 @@ class ProductoDetalle(ProductoBase):
 class ProductoLista(ProductoBase):
     id: int
     es_nuevo: bool = False
+    ranking_ventas: Optional[int] = None
 
 
 class PaginatedResponse(BaseModel):

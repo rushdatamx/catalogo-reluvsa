@@ -211,6 +211,15 @@ def init_database():
         except sqlite3.OperationalError:
             pass  # columna ya existe
 
+        # Columna ranking_ventas: posición en el top de más vendidos (1 = el más vendido).
+        # NULL cuando el producto no está en el archivo mensual data/top-mas-vendidos.xlsx.
+        # Se puebla con scripts/actualizar_top_vendidos.py.
+        try:
+            cursor.execute("ALTER TABLE productos ADD COLUMN ranking_ventas INTEGER")
+        except sqlite3.OperationalError:
+            pass  # columna ya existe
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_productos_ranking ON productos(ranking_ventas)")
+
         print("Base de datos inicializada correctamente")
 
 

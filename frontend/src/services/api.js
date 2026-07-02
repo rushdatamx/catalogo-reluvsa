@@ -61,6 +61,8 @@ export const getFiltros = {
 
 // Productos
 export const getProductos = (params) => api.get('/productos', { params });
+export const getTopVendidos = (params) => api.get('/productos/top-vendidos', { params });
+export const getTopVendidosCategorias = (params) => api.get('/productos/top-vendidos/categorias', { params });
 export const getProducto = (sku, config = {}) => api.get(`/productos/${encodeURIComponent(sku)}`, config);
 export const buscarProductos = (q, limit = 20) => api.get('/productos/buscar', { params: { q, limit } });
 

@@ -363,7 +363,7 @@ def listar_productos(
             SELECT DISTINCT
                 p.id, p.sku, p.departamento, p.marca, p.descripcion_original,
                 p.nombre_producto, p.tipo_producto, p.precio_publico, p.precio_mayoreo,
-                p.imagen_url, p.inventario_total,
+                p.imagen_url, p.inventario_total, p.ranking_ventas,
                 CASE
                     WHEN p.created_at >= datetime('now', '-60 days')
                     THEN 1 ELSE 0
@@ -389,7 +389,8 @@ def listar_productos(
                 precio_mayoreo=row['precio_mayoreo'],
                 imagen_url=row['imagen_url'],
                 inventario_total=row['inventario_total'],
-                es_nuevo=bool(row['es_nuevo'])
+                es_nuevo=bool(row['es_nuevo']),
+                ranking_ventas=row['ranking_ventas']
             ))
 
         return PaginatedResponse(
@@ -399,6 +400,94 @@ def listar_productos(
             pages=pages,
             items=items
         )
+
+
+@router.get("/top-vendidos")
+def top_vendidos(
+    departamento: Optional[str] = Query(None, description="Filtrar el top por departamento/categoría"),
+    con_inventario: bool = Query(True, description="Solo productos disponibles para comprar"),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """Productos más vendidos (ranking mensual desde data/top-mas-vendidos.xlsx).
+
+    Ordenados por ranking_ventas ascendente (1 = el más vendido).
+    Si no hay ranking cargado, devuelve lista vacía.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+
+        where = ["p.ranking_ventas IS NOT NULL"]
+        params = []
+        if departamento:
+            where.append("p.departamento = ?")
+            params.append(departamento)
+        if con_inventario:
+            where.append("p.inventario_total > 0")
+
+        where_sql = "WHERE " + " AND ".join(where)
+
+        cursor.execute(f"""
+            SELECT
+                p.id, p.sku, p.departamento, p.marca, p.descripcion_original,
+                p.nombre_producto, p.tipo_producto, p.precio_publico, p.precio_mayoreo,
+                p.imagen_url, p.inventario_total, p.ranking_ventas,
+                CASE
+                    WHEN p.created_at >= datetime('now', '-60 days')
+                    THEN 1 ELSE 0
+                END as es_nuevo
+            FROM productos p
+            {where_sql}
+            ORDER BY p.ranking_ventas ASC
+            LIMIT ?
+        """, params + [limit])
+
+        items = []
+        for row in cursor.fetchall():
+            items.append(ProductoLista(
+                id=row['id'],
+                sku=row['sku'],
+                departamento=row['departamento'],
+                marca=row['marca'],
+                descripcion_original=row['descripcion_original'],
+                nombre_producto=row['nombre_producto'],
+                tipo_producto=row['tipo_producto'],
+                precio_publico=row['precio_publico'],
+                precio_mayoreo=row['precio_mayoreo'],
+                imagen_url=row['imagen_url'],
+                inventario_total=row['inventario_total'],
+                es_nuevo=bool(row['es_nuevo']),
+                ranking_ventas=row['ranking_ventas']
+            ))
+        return items
+
+
+@router.get("/top-vendidos/categorias")
+def top_vendidos_categorias(
+    con_inventario: bool = Query(True, description="Solo productos disponibles"),
+    min_productos: int = Query(3, ge=1, description="Mínimo de productos para incluir la categoría"),
+):
+    """Departamentos que tienen productos en el top de más vendidos, con su conteo.
+
+    Sirve para armar las pestañas/filtros por categoría estilo MercadoLibre.
+    Ordenados por cantidad de productos en el top (categoría más representada primero).
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        inv = "AND inventario_total > 0" if con_inventario else ""
+        cursor.execute(f"""
+            SELECT departamento, COUNT(*) as total
+            FROM productos
+            WHERE ranking_ventas IS NOT NULL
+              AND departamento IS NOT NULL
+              {inv}
+            GROUP BY departamento
+            HAVING total >= ?
+            ORDER BY total DESC
+        """, [min_productos])
+        return [
+            {"departamento": row["departamento"], "total": row["total"]}
+            for row in cursor.fetchall()
+        ]
 
 
 @router.get("/buscar")

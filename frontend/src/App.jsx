@@ -3,62 +3,12 @@ import { Search, Package, Car, Link2, Filter, X, ChevronDown, CheckCircle, XCirc
 import { getProductos, getStats, getProducto, actualizarEspecificacionesManuales, exportarExcel, exportarPDF, API_BASE } from './services/api';
 import { cn } from './lib/utils';
 
-// URL base para imágenes via proxy
-const getImageUrl = (sku) => `${API_BASE}/images/${encodeURIComponent(sku)}`;
-
-// Componente de imagen de producto con fallback
-function ProductImage({ sku, alt, className, size = 'md' }) {
-  const [error, setError] = React.useState(false);
-  const [loading, setLoading] = React.useState(true);
-
-  const sizeClasses = {
-    sm: 'w-16 h-16',
-    md: 'w-24 h-24',
-    lg: 'w-48 h-48'
-  };
-
-  if (error) {
-    return (
-      <div className={cn(
-        "flex items-center justify-center bg-notion-bg-subtle rounded-lg",
-        sizeClasses[size],
-        className
-      )}>
-        <ImageOff className="text-notion-text-secondary" size={size === 'lg' ? 48 : size === 'md' ? 32 : 20} />
-      </div>
-    );
-  }
-
-  return (
-    <div className={cn("relative", sizeClasses[size], className)}>
-      {loading && (
-        <div className={cn(
-          "absolute inset-0 flex items-center justify-center bg-notion-bg-subtle rounded-lg animate-pulse",
-          sizeClasses[size]
-        )}>
-          <Package className="text-notion-text-secondary" size={size === 'lg' ? 48 : size === 'md' ? 32 : 20} />
-        </div>
-      )}
-      <img
-        src={getImageUrl(sku)}
-        alt={alt}
-        className={cn(
-          "object-contain rounded-lg",
-          sizeClasses[size],
-          loading && "opacity-0"
-        )}
-        onLoad={() => setLoading(false)}
-        onError={() => {
-          setLoading(false);
-          setError(true);
-        }}
-      />
-    </div>
-  );
-}
+// Componente de imagen de producto con fallback (extraído para reutilizar)
+import ProductImage, { getImageUrl } from './components/ProductImage';
 
 // Componentes de Filtros
 import FiltrosCascada from './components/FiltrosCascada';
+import TopVendidos from './components/TopVendidos';
 
 // Autenticación
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -249,6 +199,11 @@ function AppContent() {
     setFiltros(nuevosFiltros);
   };
 
+  // ¿Vista "portada" limpia? (sin filtros ni búsqueda activos)
+  // En ese caso mostramos la vitrina de más vendidos, estilo MercadoLibre/Amazon.
+  const hayFiltrosActivos = Object.entries(filtros).some(([, v]) => v && v !== false);
+  const vistaPortada = !hayFiltrosActivos && busqueda.trim().length < 2;
+
   // Export helpers
   const buildExportParams = () => {
     const params = {};
@@ -401,12 +356,17 @@ function AppContent() {
           </aside>
 
           {/* Productos */}
-          <section className="flex-1">
+          <section className="flex-1 min-w-0">
+            {/* Vitrina de más vendidos (solo en portada, sin filtros/búsqueda) */}
+            {vistaPortada && (
+              <TopVendidos onProductoClick={setProductoSeleccionado} />
+            )}
+
             {/* Header de resultados */}
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <h2 className="text-lg font-semibold text-notion-text-primary">
-                  Productos
+                  {vistaPortada ? 'Catálogo completo' : 'Productos'}
                 </h2>
                 {productos.length > 0 && (
                   <div className="flex items-center gap-2">
