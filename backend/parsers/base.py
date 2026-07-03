@@ -774,7 +774,8 @@ class BaseParser:
                     earliest_cut = idx
 
         # Buscar patrones de anos (01/06, 2015-2020)
-        match_year = re.search(r'\s+\d{2,4}[/-]\d{2,4}', nombre)
+        # Excluir medidas en pulgadas (19/21'' o 19/21") que no son rangos de años
+        match_year = re.search(r'\s+\d{2,4}[/-]\d{2,4}(?!\s*[\'"″])', nombre)
         if match_year and match_year.start() < earliest_cut:
             earliest_cut = match_year.start()
 
