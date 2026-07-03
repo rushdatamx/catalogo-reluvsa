@@ -656,6 +656,23 @@ El método `_extraer_modelo_marca()` busca el modelo **más cercano al año** en
 
 Usa `rfind()` para encontrar la posición más a la derecha del modelo, garantizando que se asocie correctamente con su año.
 
+### Limpieza de Nombres: medidas en pulgadas vs rangos de años (fix Julio 2026)
+
+El pipeline `limpiar_nombre_producto()` (en `base.py`) recorta info vehicular del nombre,
+incluyendo rangos de años tipo `07/20`. El regex de años lleva un **lookahead negativo
+para comillas de pulgada**:
+
+```python
+# base.py (_strip_vehicle_info) — NO tocar el lookahead
+match_year = re.search(r'\s+\d{2,4}[/-]\d{2,4}(?!\s*[\'"″])', nombre)
+```
+
+Sin ese lookahead, medidas dobles como `19/21''` (limpiaparabrisas) se confundían con
+rangos de años y el nombre quedaba truncado a solo "LIMPIAPARABRISAS" (48 productos
+RELUVSA, dept ACCESORIO, corregidos en Julio 2026). Las medidas sencillas (`16''`) nunca
+tuvieron problema. Ojo: el dept **ACCESORIO** SÍ pasa por `_strip_vehicle_info` (no está
+en la lista `es_sin_compat`), aunque la marca use `ParserSinCompatibilidad`.
+
 ### Marcas con Parser Específico
 82 parsers en `backend/parsers/` para marcas como: AC DELCO, GONHER, SYD, INJETECH, MONROE, NGK, BOSCH, etc.
 
