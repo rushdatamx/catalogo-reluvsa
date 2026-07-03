@@ -199,7 +199,7 @@ CREATE INDEX idx_especs_manuales_producto ON especificaciones_manuales(producto_
 ```
 GET /api/productos
     ?departamento=SUSPENSION
-    ?marca=MONROE
+    ?marca=MONROE&marca=KYB            # MULTI-selección: repetir el param (IN SQL)
     ?grupo_producto=AMORTIGUADORES     # Filtro por grupo
     ?marca_vehiculo=CHEVROLET
     ?modelo_vehiculo=SILVERADO
@@ -278,10 +278,15 @@ GET /api/images/{sku}
 GET /api/exportar/excel?[mismos filtros que /api/productos]
     # Genera Excel (.xlsx) con thumbnails 75x75, compatibilidades, intercambiables
     # Columna SKU = sku_real (comercial) con fallback a sku (Clave) si está vacío
-    # Máx 500 productos | Timeout imagen: 5s | Concurrencia: 10
+    # Máx 1000 productos | Timeout imagen: 5s | Concurrencia: 25
+    # ?solo_top_vendidos=true  -> exporta solo el ranking de más vendidos
+    #                             (ranking_ventas IS NOT NULL, orden por ranking ASC)
 GET /api/exportar/pdf?[mismos filtros que /api/productos]
     # Genera PDF landscape con thumbnails 50x50, filas alternadas
     # Compatibilidades/intercambiables: máx 5 + "... y X más"
+    # ?solo_top_vendidos=true  -> igual que Excel (usado por la vitrina TopVendidos)
+# Límite y concurrencia: constantes MAX_PRODUCTOS_EXPORT=1000, IMAGE_CONCURRENCY=25
+# en backend/routers/exportar.py (subir concurrencia compensa el timeout de Railway).
 
 # Autenticación
 POST /api/auth/login
@@ -323,7 +328,9 @@ Componentes principales (`frontend/src/`):
   7. Especificaciones Manuales (editables)
 
 ### FiltrosCascada.jsx (Sidebar)
-- Filtros básicos: Departamento, Marca del Producto
+- Filtros básicos: Departamento (single-select), **Marca del Producto (MULTI-select)**
+  - Marca usa el componente `MultiSelectField` (checkboxes en panel desplegable, estilo
+    Amazon). `filtros.marca` es un **array de strings** (no un string). Ver nota abajo.
 - Sección "Compatibilidad Vehicular" (colapsable):
   - Marca del Vehículo → Modelo → Año → Motor → **Grupo de Producto**
 - Secciones condicionales:
@@ -342,11 +349,25 @@ const DEPARTAMENTOS_SIN_COMPATIBILIDAD = ['LLANTAS', 'LUBRICACIÓN', 'QUIMICOS/A
 const MARCAS_ACUMULADORES = ['CHECKER', 'EXTREMA', 'CAMEL'];
 
 // Lógica de visualización
+// OJO: filtros.marca es un ARRAY (multi-select). Se normaliza a marcasSel.
+const marcasSel = Array.isArray(filtros.marca) ? filtros.marca : (filtros.marca ? [filtros.marca] : []);
 const esLlantas = filtros.departamento === 'LLANTAS';
 const esAceites = filtros.departamento === 'LUBRICACIÓN' || filtros.departamento === 'QUIMICOS/ADITIVOS';
-const esAcumuladores = MARCAS_ACUMULADORES.includes(filtros.marca);
+const esAcumuladores = marcasSel.some((m) => MARCAS_ACUMULADORES.includes(m)); // alguna marca es de acumulador
 const mostrarFiltrosVehiculo = !DEPARTAMENTOS_SIN_COMPATIBILIDAD.includes(filtros.departamento) && !esAcumuladores;
 ```
+
+### ⚠️ Nota importante: Marca es MULTI-selección (array)
+`filtros.marca` es un **array de strings**, NO un string. Consecuencias a recordar:
+- Backend: `productos.py`, `exportar.py` y los 14 endpoints de `filtros.py` usan
+  `p.marca IN (?,?,...)` (no `= ?`). El param es `Optional[List[str]] = Query(None)`.
+  Retrocompatible: `?marca=X` (un valor) llega como `['X']`.
+- Frontend: axios lleva un `paramsSerializer` (en `services/api.js`) que serializa arrays
+  como `marca=X&marca=Y` (repeat), que es lo que FastAPI espera para `List[str]`.
+- `[]` es truthy en JS: en TODO punto que itere `filtros` (`cargarProductos`,
+  `buildExportParams`, `hayFiltrosActivos` en App.jsx; `tieneAlgunFiltro` en
+  FiltrosCascada) hay que tratar el array vacío como "sin filtro" (`Array.isArray(v) ? v.length > 0 : ...`).
+- Departamento sigue siendo **single-select** (string). Solo Marca es multi.
 
 ## Productos Intercambiables
 
@@ -428,6 +449,9 @@ GET /api/filtros/departamentos-populares?limit=8
 ### UI
 - **Vitrina** (`components/TopVendidos.jsx`): carrusel horizontal, pestañas por categoría,
   badges de ranking (🥇🥈🥉 top 3, #N el resto). Solo en la portada (`vistaPortada`).
+  - **Exportar Excel/PDF** desde el encabezado de la vitrina: exporta el ranking vía
+    `?solo_top_vendidos=true`, respetando la pestaña de categoría activa (departamento)
+    y TODO el ranking cargado (no solo los ~30 visibles del carrusel).
 - **Barra de categorías** (`components/BarraCategorias.jsx`): "Más vendidos" + departamentos
   populares; al hacer clic filtra el catálogo por departamento.
 

@@ -137,7 +137,18 @@ Agrega ahí los nombres bonitos que quieras que se vean en la UI.
 | `getFiltros.*` | `GET /api/filtros/*` | Sidebar de filtros en cascada |
 | `getStats()` | `GET /api/stats` | Badges de stats en el header |
 | `crearCheckout(items, sucursal)` | `POST /api/checkout` | Stripe Checkout |
-| `exportarExcel/PDF(params)` | `GET /api/exportar/*` | Botones exportar |
+| `exportarExcel/PDF(params)` | `GET /api/exportar/*` | Botones exportar (catálogo y vitrina más vendidos) |
+
+> **Exportar**: límite 1000 productos (constante `MAX_PRODUCTOS_EXPORT` en el backend).
+> Los botones existen en dos lugares: (1) header de resultados en `App.jsx`, con los filtros
+> activos; (2) header de la vitrina `TopVendidos.jsx`, que pasa `solo_top_vendidos=true` +
+> el departamento de la pestaña activa para exportar el ranking.
+
+> **Marca es multi-selección**: `filtros.marca` es un **array**. El componente es
+> `MultiSelectField` (checkboxes) en `FiltrosCascada.jsx`. `services/api.js` tiene un
+> `paramsSerializer` que manda arrays como `marca=X&marca=Y`. En todo punto que itere
+> `filtros`, tratar `[]` como "sin filtro" (`[]` es truthy en JS). Departamento sigue siendo
+> single-select (string). Detalle completo en el CLAUDE.md raíz, sección "Lógica de Filtros Condicionales".
 
 ## Cómo validar cambios antes de subir
 
