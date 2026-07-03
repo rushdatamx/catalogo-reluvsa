@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Filter, Truck, Tag, Car, Calendar, Gauge, Circle, ChevronDown, X, Package, Droplet, Battery, Check, Sparkles } from 'lucide-react';
 import { getFiltros } from '../services/api';
 import { cn } from '../lib/utils';
@@ -38,6 +38,100 @@ function SelectField({ label, icon: Icon, value, onChange, options, disabled, pl
           size={16}
           className="absolute right-3 top-1/2 -translate-y-1/2 text-notion-text-secondary pointer-events-none"
         />
+      </div>
+    </div>
+  );
+}
+
+// Componente Multi-Select con checkboxes en panel desplegable (estilo Amazon/MercadoLibre)
+function MultiSelectField({ label, icon: Icon, values, onChange, options, disabled, placeholder }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const seleccionadas = Array.isArray(values) ? values : [];
+
+  // Cerrar al hacer clic fuera del componente
+  useEffect(() => {
+    if (!open) return;
+    const handleClickOutside = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [open]);
+
+  const toggle = (opt) => {
+    if (seleccionadas.includes(opt)) {
+      onChange(seleccionadas.filter((v) => v !== opt));
+    } else {
+      onChange([...seleccionadas, opt]);
+    }
+  };
+
+  const resumen =
+    seleccionadas.length === 0 ? placeholder :
+    seleccionadas.length === 1 ? seleccionadas[0] :
+    `${seleccionadas.length} seleccionadas`;
+
+  return (
+    <div className="mb-4" ref={ref}>
+      <label className="flex items-center gap-2 text-sm font-medium text-notion-text-primary mb-2">
+        {Icon && <Icon size={14} className="text-notion-text-secondary" />}
+        {label}
+      </label>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => !disabled && setOpen((o) => !o)}
+          disabled={disabled}
+          className={cn(
+            "w-full px-3 py-2.5 bg-white border border-notion-border rounded-lg text-sm text-left flex items-center justify-between cursor-pointer transition-all",
+            "focus:outline-none focus:border-reluvsa-yellow focus:ring-2 focus:ring-reluvsa-yellow/20",
+            "disabled:bg-notion-bg-subtle disabled:cursor-not-allowed disabled:text-notion-text-secondary",
+            seleccionadas.length > 0 && "border-reluvsa-yellow/50 bg-reluvsa-yellow/5"
+          )}
+        >
+          <span className={cn("truncate", seleccionadas.length === 0 && "text-notion-text-secondary")}>
+            {resumen}
+          </span>
+          <ChevronDown size={16} className={cn("flex-shrink-0 text-notion-text-secondary transition-transform", open && "rotate-180")} />
+        </button>
+
+        {open && (
+          <div className="absolute z-30 mt-1 w-full bg-white border border-notion-border rounded-lg shadow-lg max-h-64 overflow-y-auto">
+            {seleccionadas.length > 0 && (
+              <button
+                type="button"
+                onClick={() => onChange([])}
+                className="w-full px-3 py-2 text-left text-xs text-reluvsa-red hover:bg-notion-bg-subtle border-b border-notion-border flex items-center gap-1 sticky top-0 bg-white"
+              >
+                <X size={12} /> Limpiar selección
+              </button>
+            )}
+            {options.length === 0 ? (
+              <div className="px-3 py-3 text-xs text-notion-text-secondary">Sin opciones</div>
+            ) : (
+              options.map((opt) => {
+                const checked = seleccionadas.includes(opt);
+                return (
+                  <button
+                    type="button"
+                    key={opt}
+                    onClick={() => toggle(opt)}
+                    className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 hover:bg-notion-bg-subtle transition-colors"
+                  >
+                    <span className={cn(
+                      "flex items-center justify-center w-4 h-4 rounded border flex-shrink-0",
+                      checked ? "bg-reluvsa-yellow border-reluvsa-yellow" : "border-notion-border bg-white"
+                    )}>
+                      {checked && <Check size={12} className="text-reluvsa-black" />}
+                    </span>
+                    <span className="truncate">{opt}</span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -91,9 +185,14 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
 
   const [loading, setLoading] = useState({});
 
+  // marca ahora es un array (multi-selección). Normalizamos para lógica derivada.
+  const marcasSel = Array.isArray(filtros.marca) ? filtros.marca : (filtros.marca ? [filtros.marca] : []);
+  // Para pasar a la API: array con valores, o undefined si no hay selección (evita mandar []).
+  const marcaParam = marcasSel.length > 0 ? marcasSel : undefined;
   const esLlantas = filtros.departamento === 'LLANTAS';
   const esAceites = filtros.departamento === 'LUBRICACIÓN' || filtros.departamento === 'QUIMICOS/ADITIVOS';
-  const esAcumuladores = MARCAS_ACUMULADORES.includes(filtros.marca);
+  // Mostrar filtros de acumulador si ALGUNA marca seleccionada es de acumuladores.
+  const esAcumuladores = marcasSel.some((m) => MARCAS_ACUMULADORES.includes(m));
   const mostrarFiltrosVehiculo = !DEPARTAMENTOS_SIN_COMPATIBILIDAD.includes(filtros.departamento) && !esAcumuladores;
 
   // Cargar departamentos al inicio
@@ -121,7 +220,7 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
     setLoading(prev => ({ ...prev, marcasVehiculo: true }));
     getFiltros.marcasVehiculo({
       departamento: filtros.departamento || undefined,
-      marca_producto: filtros.marca || undefined,
+      marca_producto: marcaParam,
     })
       .then(res => setOpciones(prev => ({ ...prev, marcasVehiculo: res.data.valores })))
       .catch(console.error)
@@ -138,7 +237,7 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
     getFiltros.modelosVehiculo({
       marca_vehiculo: filtros.marca_vehiculo,
       departamento: filtros.departamento || undefined,
-      marca_producto: filtros.marca || undefined,
+      marca_producto: marcaParam,
     })
       .then(res => setOpciones(prev => ({ ...prev, modelosVehiculo: res.data.valores })))
       .catch(console.error)
@@ -184,7 +283,7 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
     setLoading(prev => ({ ...prev, gruposProducto: true }));
     getFiltros.gruposProducto({
       departamento: filtros.departamento || undefined,
-      marca_producto: filtros.marca || undefined,
+      marca_producto: marcaParam,
       marca_vehiculo: filtros.marca_vehiculo || undefined,
       modelo_vehiculo: filtros.modelo_vehiculo || undefined,
       año: filtros.año || undefined,
@@ -210,16 +309,16 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
     }
 
     setLoading(prev => ({ ...prev, anchosLlanta: true }));
-    getFiltros.anchosLlanta({ marca_producto: filtros.marca || undefined })
+    getFiltros.anchosLlanta({ marca_producto: marcaParam })
       .then(res => setOpciones(prev => ({ ...prev, anchosLlanta: res.data.valores })))
       .catch(console.error)
       .finally(() => setLoading(prev => ({ ...prev, anchosLlanta: false })));
 
-    getFiltros.tiposLlanta({ marca_producto: filtros.marca || undefined })
+    getFiltros.tiposLlanta({ marca_producto: marcaParam })
       .then(res => setOpciones(prev => ({ ...prev, tiposLlanta: res.data.valores })))
       .catch(console.error);
 
-    getFiltros.capasLlanta({ marca_producto: filtros.marca || undefined })
+    getFiltros.capasLlanta({ marca_producto: marcaParam })
       .then(res => setOpciones(prev => ({ ...prev, capasLlanta: res.data.valores })))
       .catch(console.error);
   }, [esLlantas, filtros.marca]);
@@ -229,7 +328,7 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
     setLoading(prev => ({ ...prev, relacionesLlanta: true }));
     getFiltros.relacionesLlanta({
       ancho: filtros.ancho_llanta || undefined,
-      marca_producto: filtros.marca || undefined,
+      marca_producto: marcaParam,
     })
       .then(res => setOpciones(prev => ({ ...prev, relacionesLlanta: res.data.valores })))
       .catch(console.error)
@@ -242,7 +341,7 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
     getFiltros.diametrosLlanta({
       ancho: filtros.ancho_llanta || undefined,
       relacion: filtros.relacion_llanta || undefined,
-      marca_producto: filtros.marca || undefined,
+      marca_producto: marcaParam,
     })
       .then(res => setOpciones(prev => ({ ...prev, diametrosLlanta: res.data.valores })))
       .catch(console.error)
@@ -261,7 +360,7 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
       return;
     }
 
-    getFiltros.tiposAceite({ marca_producto: filtros.marca || undefined })
+    getFiltros.tiposAceite({ marca_producto: marcaParam })
       .then(res => setOpciones(prev => ({ ...prev, tiposAceite: res.data.valores })))
       .catch(console.error);
   }, [esAceites, filtros.marca]);
@@ -271,7 +370,7 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
     setLoading(prev => ({ ...prev, viscosidades: true }));
     getFiltros.viscosidades({
       tipo_aceite: filtros.tipo_aceite || undefined,
-      marca_producto: filtros.marca || undefined,
+      marca_producto: marcaParam,
     })
       .then(res => setOpciones(prev => ({ ...prev, viscosidades: res.data.valores })))
       .catch(console.error)
@@ -284,7 +383,7 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
     getFiltros.presentaciones({
       viscosidad: filtros.viscosidad || undefined,
       tipo_aceite: filtros.tipo_aceite || undefined,
-      marca_producto: filtros.marca || undefined,
+      marca_producto: marcaParam,
     })
       .then(res => setOpciones(prev => ({ ...prev, presentaciones: res.data.valores })))
       .catch(console.error)
@@ -303,11 +402,11 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
       return;
     }
 
-    getFiltros.gruposBci({ marca_producto: filtros.marca || undefined })
+    getFiltros.gruposBci({ marca_producto: marcaParam })
       .then(res => setOpciones(prev => ({ ...prev, gruposBci: res.data.valores })))
       .catch(console.error);
 
-    getFiltros.tamanosAcumulador({ marca_producto: filtros.marca || undefined })
+    getFiltros.tamanosAcumulador({ marca_producto: marcaParam })
       .then(res => setOpciones(prev => ({ ...prev, tamanosAcumulador: res.data.valores })))
       .catch(console.error);
   }, [esAcumuladores, filtros.marca]);
@@ -317,7 +416,7 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
     setLoading(prev => ({ ...prev, capacidadesCca: true }));
     getFiltros.capacidadesCca({
       grupo_bci: filtros.grupo_bci || undefined,
-      marca_producto: filtros.marca || undefined,
+      marca_producto: marcaParam,
     })
       .then(res => setOpciones(prev => ({ ...prev, capacidadesCca: res.data.valores })))
       .catch(console.error)
@@ -347,7 +446,9 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
       newFiltros.tamano_acumulador = '';
     }
     if (field === 'marca') {
-      if (MARCAS_ACUMULADORES.includes(value)) {
+      // value es un array de marcas; si ALGUNA es de acumuladores, limpiar filtros de vehículo.
+      const vals = Array.isArray(value) ? value : (value ? [value] : []);
+      if (vals.some((m) => MARCAS_ACUMULADORES.includes(m))) {
         newFiltros.marca_vehiculo = '';
         newFiltros.modelo_vehiculo = '';
         newFiltros.año = '';
@@ -390,7 +491,7 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
   const limpiarFiltros = () => {
     onFiltrosChange({
       departamento: '',
-      marca: '',
+      marca: [],
       grupo_producto: '',
       marca_vehiculo: '',
       modelo_vehiculo: '',
@@ -412,7 +513,11 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
     });
   };
 
-  const tieneAlgunFiltro = Object.entries(filtros).some(([k, v]) => v && v !== false && k !== 'page');
+  const tieneAlgunFiltro = Object.entries(filtros).some(([k, v]) => {
+    if (k === 'page') return false;
+    if (Array.isArray(v)) return v.length > 0;
+    return v && v !== false;
+  });
 
   return (
     <div className="bg-white rounded-xl p-5 border border-notion-border sticky top-28">
@@ -443,10 +548,10 @@ function FiltrosCascada({ filtros, onFiltrosChange }) {
         placeholder="Todos los departamentos"
       />
 
-      <SelectField
+      <MultiSelectField
         label="Marca del Producto"
         icon={Tag}
-        value={filtros.marca}
+        values={marcasSel}
         onChange={(v) => handleChange('marca', v)}
         options={opciones.marcasProducto}
         disabled={loading.marcasProducto}

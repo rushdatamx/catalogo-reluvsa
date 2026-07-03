@@ -24,7 +24,7 @@ router = APIRouter(prefix="/api/productos", tags=["productos"])
 def listar_productos(
     # Filtros básicos
     departamento: Optional[str] = Query(None),
-    marca: Optional[str] = Query(None, description="Marca del producto"),
+    marca: Optional[List[str]] = Query(None, description="Marca(s) del producto (multi-selección)"),
     marca_vehiculo: Optional[str] = Query(None),
     modelo_vehiculo: Optional[str] = Query(None),
     año: Optional[int] = Query(None),
@@ -89,8 +89,9 @@ def listar_productos(
             params.append(departamento)
 
         if marca:
-            where_clauses.append("p.marca = ?")
-            params.append(marca)
+            placeholders = ",".join("?" * len(marca))
+            where_clauses.append(f"p.marca IN ({placeholders})")
+            params.extend(marca)
 
         if tipo_producto:
             where_clauses.append("p.tipo_producto = ?")

@@ -25,7 +25,7 @@ function AppContent() {
   const { agregar, setAbierto, totalItems } = useCart();
   const [filtros, setFiltros] = useState({
     departamento: '',
-    marca: '',
+    marca: [],
     grupo_producto: '',
     marca_vehiculo: '',
     modelo_vehiculo: '',
@@ -103,7 +103,11 @@ function AppContent() {
       };
 
       Object.entries(filtros).forEach(([key, value]) => {
-        if (value && value !== false) params[key] = value;
+        if (Array.isArray(value)) {
+          if (value.length > 0) params[key] = value;
+        } else if (value && value !== false) {
+          params[key] = value;
+        }
       });
       if (busqueda.length >= 2) params.q = busqueda;
 
@@ -202,7 +206,9 @@ function AppContent() {
 
   // ¿Vista "portada" limpia? (sin filtros ni búsqueda activos)
   // En ese caso mostramos la vitrina de más vendidos, estilo MercadoLibre/Amazon.
-  const hayFiltrosActivos = Object.entries(filtros).some(([, v]) => v && v !== false);
+  const hayFiltrosActivos = Object.entries(filtros).some(([, v]) =>
+    Array.isArray(v) ? v.length > 0 : (v && v !== false)
+  );
   const vistaPortada = !hayFiltrosActivos && busqueda.trim().length < 2;
 
   // Barra de categorías (estilo Amazon): al elegir un departamento, filtra el catálogo.
@@ -238,7 +244,11 @@ function AppContent() {
   const buildExportParams = () => {
     const params = {};
     Object.entries(filtros).forEach(([key, value]) => {
-      if (value && value !== false) params[key] = value;
+      if (Array.isArray(value)) {
+        if (value.length > 0) params[key] = value;
+      } else if (value && value !== false) {
+        params[key] = value;
+      }
     });
     if (busqueda.length >= 2) params.q = busqueda;
     return params;

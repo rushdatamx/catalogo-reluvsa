@@ -87,8 +87,10 @@ def _build_filtered_query(
         where_clauses.append("p.departamento = ?")
         params.append(departamento)
     if marca:
-        where_clauses.append("p.marca = ?")
-        params.append(marca)
+        marca_list = marca if isinstance(marca, (list, tuple)) else [marca]
+        placeholders = ",".join("?" * len(marca_list))
+        where_clauses.append(f"p.marca IN ({placeholders})")
+        params.extend(marca_list)
     if tipo_producto:
         where_clauses.append("p.tipo_producto = ?")
         params.append(tipo_producto)
@@ -430,7 +432,7 @@ def _fetch_export_data(
 @router.get("/excel")
 async def exportar_excel(
     departamento: Optional[str] = Query(None),
-    marca: Optional[str] = Query(None),
+    marca: Optional[List[str]] = Query(None),
     marca_vehiculo: Optional[str] = Query(None),
     modelo_vehiculo: Optional[str] = Query(None),
     año: Optional[int] = Query(None),
@@ -596,7 +598,7 @@ async def exportar_excel(
 @router.get("/pdf")
 async def exportar_pdf(
     departamento: Optional[str] = Query(None),
-    marca: Optional[str] = Query(None),
+    marca: Optional[List[str]] = Query(None),
     marca_vehiculo: Optional[str] = Query(None),
     modelo_vehiculo: Optional[str] = Query(None),
     año: Optional[int] = Query(None),
@@ -685,7 +687,8 @@ async def exportar_pdf(
     if departamento:
         filtros_activos.append(f"Depto: {departamento}")
     if marca:
-        filtros_activos.append(f"Marca: {marca}")
+        marca_txt = ", ".join(marca) if isinstance(marca, (list, tuple)) else marca
+        filtros_activos.append(f"Marca: {marca_txt}")
     if grupo_producto:
         filtros_activos.append(f"Grupo: {grupo_producto}")
     if marca_vehiculo:

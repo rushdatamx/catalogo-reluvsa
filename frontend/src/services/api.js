@@ -6,6 +6,26 @@ export const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000/
 const api = axios.create({
   baseURL: API_BASE,
   timeout: 10000,
+  // Serializa arrays como key=v1&key=v2 (repeat), que es lo que FastAPI
+  // espera para parámetros de tipo List[str] (multi-selección de marcas).
+  paramsSerializer: {
+    serialize: (params) => {
+      const parts = [];
+      Object.entries(params).forEach(([key, value]) => {
+        if (value === undefined || value === null) return;
+        if (Array.isArray(value)) {
+          value.forEach((v) => {
+            if (v !== undefined && v !== null && v !== '') {
+              parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(v)}`);
+            }
+          });
+        } else {
+          parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+        }
+      });
+      return parts.join('&');
+    },
+  },
 });
 
 // Interceptor para agregar token JWT a todas las peticiones

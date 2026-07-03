@@ -83,7 +83,7 @@ def get_marcas_producto(
 @router.get("/marcas-vehiculo", response_model=FiltroOpciones)
 def get_marcas_vehiculo(
     departamento: Optional[str] = Query(None),
-    marca_producto: Optional[str] = Query(None)
+    marca_producto: Optional[List[str]] = Query(None)
 ):
     """Obtiene la lista de marcas de vehículo con compatibilidades"""
     with get_db() as conn:
@@ -101,8 +101,9 @@ def get_marcas_vehiculo(
             params.append(departamento)
 
         if marca_producto:
-            query += " AND p.marca = ?"
-            params.append(marca_producto)
+            _mp = ",".join("?" * len(marca_producto))
+            query += f" AND p.marca IN ({_mp})"
+            params.extend(marca_producto)
 
         query += " ORDER BY c.marca_vehiculo"
         cursor.execute(query, params)
@@ -114,7 +115,7 @@ def get_marcas_vehiculo(
 def get_modelos_vehiculo(
     marca_vehiculo: str = Query(..., description="Marca del vehículo"),
     departamento: Optional[str] = Query(None),
-    marca_producto: Optional[str] = Query(None)
+    marca_producto: Optional[List[str]] = Query(None)
 ):
     """Obtiene la lista de modelos para una marca de vehículo"""
     with get_db() as conn:
@@ -133,8 +134,9 @@ def get_modelos_vehiculo(
             params.append(departamento)
 
         if marca_producto:
-            query += " AND p.marca = ?"
-            params.append(marca_producto)
+            _mp = ",".join("?" * len(marca_producto))
+            query += f" AND p.marca IN ({_mp})"
+            params.extend(marca_producto)
 
         query += " ORDER BY c.modelo_vehiculo"
         cursor.execute(query, params)
@@ -224,7 +226,7 @@ def get_motores(
 @router.get("/grupos-producto", response_model=FiltroOpciones)
 def get_grupos_producto(
     departamento: Optional[str] = Query(None),
-    marca_producto: Optional[str] = Query(None),
+    marca_producto: Optional[List[str]] = Query(None),
     marca_vehiculo: Optional[str] = Query(None),
     modelo_vehiculo: Optional[str] = Query(None),
     año: Optional[int] = Query(None),
@@ -251,8 +253,9 @@ def get_grupos_producto(
             params.append(departamento)
 
         if marca_producto:
-            query += " AND p.marca = ?"
-            params.append(marca_producto)
+            _mp = ",".join("?" * len(marca_producto))
+            query += f" AND p.marca IN ({_mp})"
+            params.extend(marca_producto)
 
         if marca_vehiculo:
             query += " AND c.marca_vehiculo = ?"
@@ -306,7 +309,7 @@ def get_tipos_producto(
 
 @router.get("/llantas/anchos", response_model=FiltroOpciones)
 def get_anchos_llanta(
-    marca_producto: Optional[str] = Query(None, description="Filtrar por marca de llanta")
+    marca_producto: Optional[List[str]] = Query(None, description="Filtrar por marca(s) de llanta")
 ):
     """Obtiene anchos de llantas disponibles: 155, 175, 185, 205..."""
     with get_db() as conn:
@@ -320,8 +323,9 @@ def get_anchos_llanta(
         params = []
 
         if marca_producto:
-            query += " AND p.marca = ?"
-            params.append(marca_producto)
+            _mp = ",".join("?" * len(marca_producto))
+            query += f" AND p.marca IN ({_mp})"
+            params.extend(marca_producto)
 
         query += " ORDER BY CAST(cp.valor AS INTEGER)"
         cursor.execute(query, params)
@@ -332,7 +336,7 @@ def get_anchos_llanta(
 @router.get("/llantas/relaciones", response_model=FiltroOpciones)
 def get_relaciones_llanta(
     ancho: Optional[str] = Query(None, description="Filtrar por ancho"),
-    marca_producto: Optional[str] = Query(None)
+    marca_producto: Optional[List[str]] = Query(None)
 ):
     """Obtiene relaciones (perfil) de llantas: 50, 55, 60, 65, 70..."""
     with get_db() as conn:
@@ -357,8 +361,9 @@ def get_relaciones_llanta(
             params.append(ancho)
 
         if marca_producto:
-            query += " AND p.marca = ?"
-            params.append(marca_producto)
+            _mp = ",".join("?" * len(marca_producto))
+            query += f" AND p.marca IN ({_mp})"
+            params.extend(marca_producto)
 
         query += " ORDER BY CAST(cp.valor AS INTEGER)"
         cursor.execute(query, params)
@@ -370,7 +375,7 @@ def get_relaciones_llanta(
 def get_diametros_llanta(
     ancho: Optional[str] = Query(None),
     relacion: Optional[str] = Query(None),
-    marca_producto: Optional[str] = Query(None)
+    marca_producto: Optional[List[str]] = Query(None)
 ):
     """Obtiene diámetros (rin) de llantas: R13, R14, R15, R16..."""
     with get_db() as conn:
@@ -404,8 +409,9 @@ def get_diametros_llanta(
             params.append(relacion)
 
         if marca_producto:
-            query += " AND p.marca = ?"
-            params.append(marca_producto)
+            _mp = ",".join("?" * len(marca_producto))
+            query += f" AND p.marca IN ({_mp})"
+            params.extend(marca_producto)
 
         query += " ORDER BY cp.valor"
         cursor.execute(query, params)
@@ -415,7 +421,7 @@ def get_diametros_llanta(
 
 @router.get("/llantas/tipos", response_model=FiltroOpciones)
 def get_tipos_llanta(
-    marca_producto: Optional[str] = Query(None)
+    marca_producto: Optional[List[str]] = Query(None)
 ):
     """Obtiene tipos de llantas: Deportiva, Direccional, Tracción..."""
     with get_db() as conn:
@@ -429,8 +435,9 @@ def get_tipos_llanta(
         params = []
 
         if marca_producto:
-            query += " AND p.marca = ?"
-            params.append(marca_producto)
+            _mp = ",".join("?" * len(marca_producto))
+            query += f" AND p.marca IN ({_mp})"
+            params.extend(marca_producto)
 
         query += " ORDER BY cp.valor"
         cursor.execute(query, params)
@@ -440,7 +447,7 @@ def get_tipos_llanta(
 
 @router.get("/llantas/capas", response_model=FiltroOpciones)
 def get_capas_llanta(
-    marca_producto: Optional[str] = Query(None)
+    marca_producto: Optional[List[str]] = Query(None)
 ):
     """Obtiene capas de llantas: 6, 8, 10, 14, 16..."""
     with get_db() as conn:
@@ -454,8 +461,9 @@ def get_capas_llanta(
         params = []
 
         if marca_producto:
-            query += " AND p.marca = ?"
-            params.append(marca_producto)
+            _mp = ",".join("?" * len(marca_producto))
+            query += f" AND p.marca IN ({_mp})"
+            params.extend(marca_producto)
 
         query += " ORDER BY CAST(cp.valor AS INTEGER)"
         cursor.execute(query, params)
@@ -470,7 +478,7 @@ def get_capas_llanta(
 @router.get("/aceites/viscosidades", response_model=FiltroOpciones)
 def get_viscosidades(
     tipo_aceite: Optional[str] = Query(None),
-    marca_producto: Optional[str] = Query(None)
+    marca_producto: Optional[List[str]] = Query(None)
 ):
     """Obtiene viscosidades SAE: 5W30, 10W40, 20W50, SAE 40..."""
     with get_db() as conn:
@@ -493,8 +501,9 @@ def get_viscosidades(
             params.append(tipo_aceite)
 
         if marca_producto:
-            query += " AND p.marca = ?"
-            params.append(marca_producto)
+            _mp = ",".join("?" * len(marca_producto))
+            query += f" AND p.marca IN ({_mp})"
+            params.extend(marca_producto)
 
         query += " ORDER BY cp.valor"
         cursor.execute(query, params)
@@ -504,7 +513,7 @@ def get_viscosidades(
 
 @router.get("/aceites/tipos", response_model=FiltroOpciones)
 def get_tipos_aceite(
-    marca_producto: Optional[str] = Query(None)
+    marca_producto: Optional[List[str]] = Query(None)
 ):
     """Obtiene tipos de aceite: Motor, Transmisión, Hidráulico, ATF..."""
     with get_db() as conn:
@@ -518,8 +527,9 @@ def get_tipos_aceite(
         params = []
 
         if marca_producto:
-            query += " AND p.marca = ?"
-            params.append(marca_producto)
+            _mp = ",".join("?" * len(marca_producto))
+            query += f" AND p.marca IN ({_mp})"
+            params.extend(marca_producto)
 
         query += " ORDER BY cp.valor"
         cursor.execute(query, params)
@@ -531,7 +541,7 @@ def get_tipos_aceite(
 def get_presentaciones(
     viscosidad: Optional[str] = Query(None),
     tipo_aceite: Optional[str] = Query(None),
-    marca_producto: Optional[str] = Query(None)
+    marca_producto: Optional[List[str]] = Query(None)
 ):
     """Obtiene presentaciones: 946ml, 1L, 4L, 5L, 19L..."""
     with get_db() as conn:
@@ -563,8 +573,9 @@ def get_presentaciones(
             params.append(tipo_aceite)
 
         if marca_producto:
-            query += " AND p.marca = ?"
-            params.append(marca_producto)
+            _mp = ",".join("?" * len(marca_producto))
+            query += f" AND p.marca IN ({_mp})"
+            params.extend(marca_producto)
 
         query += " ORDER BY cp.valor"
         cursor.execute(query, params)
@@ -578,7 +589,7 @@ def get_presentaciones(
 
 @router.get("/acumuladores/grupos", response_model=FiltroOpciones)
 def get_grupos_bci(
-    marca_producto: Optional[str] = Query(None)
+    marca_producto: Optional[List[str]] = Query(None)
 ):
     """Obtiene grupos BCI: 34, 35, 47, 65, 99..."""
     with get_db() as conn:
@@ -592,8 +603,9 @@ def get_grupos_bci(
         params = []
 
         if marca_producto:
-            query += " AND p.marca = ?"
-            params.append(marca_producto)
+            _mp = ",".join("?" * len(marca_producto))
+            query += f" AND p.marca IN ({_mp})"
+            params.extend(marca_producto)
 
         query += " ORDER BY cp.valor"
         cursor.execute(query, params)
@@ -604,7 +616,7 @@ def get_grupos_bci(
 @router.get("/acumuladores/capacidades", response_model=FiltroOpciones)
 def get_capacidades_cca(
     grupo_bci: Optional[str] = Query(None),
-    marca_producto: Optional[str] = Query(None)
+    marca_producto: Optional[List[str]] = Query(None)
 ):
     """Obtiene capacidades CCA: 350A, 550A, 750A..."""
     with get_db() as conn:
@@ -627,8 +639,9 @@ def get_capacidades_cca(
             params.append(grupo_bci)
 
         if marca_producto:
-            query += " AND p.marca = ?"
-            params.append(marca_producto)
+            _mp = ",".join("?" * len(marca_producto))
+            query += f" AND p.marca IN ({_mp})"
+            params.extend(marca_producto)
 
         query += " ORDER BY cp.valor"
         cursor.execute(query, params)
@@ -638,7 +651,7 @@ def get_capacidades_cca(
 
 @router.get("/acumuladores/tamanos", response_model=FiltroOpciones)
 def get_tamanos_acumulador(
-    marca_producto: Optional[str] = Query(None)
+    marca_producto: Optional[List[str]] = Query(None)
 ):
     """Obtiene tamaños: Chico, Medio Chico, Intermedio, Mediano, Grande..."""
     with get_db() as conn:
@@ -652,8 +665,9 @@ def get_tamanos_acumulador(
         params = []
 
         if marca_producto:
-            query += " AND p.marca = ?"
-            params.append(marca_producto)
+            _mp = ",".join("?" * len(marca_producto))
+            query += f" AND p.marca IN ({_mp})"
+            params.extend(marca_producto)
 
         query += " ORDER BY cp.valor"
         cursor.execute(query, params)
