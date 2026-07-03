@@ -40,9 +40,9 @@ router = APIRouter(prefix="/api/exportar", tags=["exportar"])
 # URL base del servidor de imágenes
 IMAGE_SERVER_BASE = "http://reluvsa.zapto.org/cgi-vel/omner2/fotos"
 
-MAX_PRODUCTOS_EXPORT = 500
+MAX_PRODUCTOS_EXPORT = 1000
 IMAGE_DOWNLOAD_TIMEOUT = 5.0
-IMAGE_CONCURRENCY = 10
+IMAGE_CONCURRENCY = 25
 THUMB_SIZE_EXCEL = (75, 75)
 THUMB_SIZE_PDF = (150, 150)  # 3x resolution, rendered at 50x50pt for sharp output
 
