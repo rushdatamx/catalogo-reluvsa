@@ -1,16 +1,20 @@
 """
-Base de datos SEPARADA para pedidos/órdenes de Stripe.
+Base de datos SEPARADA para datos VIVOS de producción: pedidos/órdenes de
+Stripe y usuarios de proveedores.
 
 ¿Por qué una BD aparte de catalogo.db?
   El catálogo (productos, precios, inventario) se regenera desde el Excel y se
   SOBRESCRIBE completo en cada deploy (database.ensure_database copia el archivo
-  del repo). Si las órdenes vivieran ahí, cada actualización de precios las
-  borraría.
+  del repo). Si las órdenes o los usuarios vivieran ahí, cada actualización de
+  precios los borraría.
 
-  Por eso las órdenes viven en `pedidos.db`, ubicada por defecto en un VOLUMEN
-  PERSISTENTE de Railway (env var PEDIDOS_DB_PATH). Ese archivo NO está en el
-  repo y NO se sobrescribe en los deploys, así que las órdenes sobreviven a
+  Por eso las órdenes y los usuarios viven en `pedidos.db`, ubicada por defecto
+  en un VOLUMEN PERSISTENTE de Railway (env var PEDIDOS_DB_PATH). Ese archivo NO
+  está en el repo y NO se sobrescribe en los deploys, así que sobreviven a
   cualquier actualización de catálogo.
+
+  Los usuarios viven JUNTO a las órdenes (misma BD) porque las órdenes
+  referencian `username` — así el JOIN usuarios↔orders es directo.
 
 Configuración:
   - PEDIDOS_DB_PATH: ruta al archivo de la BD de pedidos.
@@ -87,6 +91,20 @@ def init_pedidos_db():
                 cantidad INTEGER NOT NULL,
                 precio_unitario REAL NOT NULL,
                 FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS usuarios (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,               -- bcrypt, nunca texto plano
+                nombre_empresa TEXT,
+                contacto TEXT,                             -- nombre/tel/email de contacto (texto libre)
+                role TEXT NOT NULL DEFAULT 'proveedor',
+                activo INTEGER NOT NULL DEFAULT 1,         -- 0 = desactivado (soft delete)
+                stripe_customer_id TEXT,                   -- Customer de Stripe (creado en su 1er checkout)
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_login TIMESTAMP
             )
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_orders_username ON orders(username)")

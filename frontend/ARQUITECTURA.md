@@ -22,7 +22,7 @@ Backend local para desarrollo:
 ```bash
 cd backend
 python3 -m uvicorn main:app --reload --port 8000
-# Login de dev: admin / admin123  (o visitante / visitante123)
+# Login de dev: admin / admin123  (los proveedores se crean desde el modal de usuarios)
 ```
 
 ## Estructura de archivos
@@ -43,6 +43,7 @@ frontend/src/
 │   ├── ProductImage.jsx         # Imagen de producto con fallback + skeleton (reutilizable)
 │   ├── FiltrosCascada.jsx       # Sidebar de filtros en cascada (~670 líneas)
 │   ├── CartDrawer.jsx           # Drawer lateral del carrito de compra
+│   ├── GestionUsuarios.jsx      # Modal admin: alta/baja de usuarios de proveedores
 │   ├── Login.jsx                # Pantalla de login
 │   └── OrderResult.jsx          # Pantalla resultado de pago (/success, /cancel)
 ├── context/
@@ -137,6 +138,8 @@ Agrega ahí los nombres bonitos que quieras que se vean en la UI.
 | `getFiltros.*` | `GET /api/filtros/*` | Sidebar de filtros en cascada |
 | `getStats()` | `GET /api/stats` | Badges de stats en el header |
 | `crearCheckout(items, sucursal)` | `POST /api/checkout` | Stripe Checkout |
+| `getUsuarios/crearUsuario/actualizarUsuario` | `/api/auth/usuarios*` | Modal gestión de usuarios (solo admin) |
+| `getOrdenes(params)` | `GET /api/orders` | Todas las órdenes (solo admin, módulo pedidos futuro) |
 | `exportarExcel/PDF(params)` | `GET /api/exportar/*` | Botones exportar (catálogo y vitrina más vendidos) |
 
 > **Exportar**: límite 1000 productos (constante `MAX_PRODUCTOS_EXPORT` en el backend).

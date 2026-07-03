@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, Package, Car, Link2, Filter, X, ChevronDown, CheckCircle, XCircle, AlertCircle, Tag, Calendar, Gauge, Truck, Settings, Save, LogOut, User, ImageOff, FileSpreadsheet, FileText, Download, Loader2, ShoppingCart, Plus } from 'lucide-react';
+import { Search, Package, Car, Link2, Filter, X, ChevronDown, CheckCircle, XCircle, AlertCircle, Tag, Calendar, Gauge, Truck, Settings, Save, LogOut, User, ImageOff, FileSpreadsheet, FileText, Download, Loader2, ShoppingCart, Plus, Users } from 'lucide-react';
 import { getProductos, getStats, getProducto, actualizarEspecificacionesManuales, exportarExcel, exportarPDF, API_BASE } from './services/api';
 import { cn } from './lib/utils';
 
@@ -14,6 +14,7 @@ import BarraCategorias from './components/BarraCategorias';
 // Autenticación
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './components/Login';
+import GestionUsuarios from './components/GestionUsuarios';
 
 // Carrito / Compra
 import { CartProvider, useCart, puedeComprar } from './context/CartContext';
@@ -61,6 +62,7 @@ function AppContent() {
   const [loadingDetalle, setLoadingDetalle] = useState(false);
   const [stats, setStats] = useState(null);
   const [exportando, setExportando] = useState(null); // null | 'excel' | 'pdf'
+  const [mostrarUsuarios, setMostrarUsuarios] = useState(false); // modal gestión de usuarios (admin)
 
   // Estados para especificaciones manuales
   const [especsManuales, setEspecsManuales] = useState({
@@ -351,6 +353,17 @@ function AppContent() {
                   </span>
                 )}
               </button>
+              {/* Gestión de usuarios (solo admin) */}
+              {isAdmin() && (
+                <button
+                  onClick={() => setMostrarUsuarios(true)}
+                  className="flex items-center gap-1 bg-black/10 hover:bg-black/20 px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
+                  aria-label="Gestionar usuarios"
+                  title="Usuarios de proveedores"
+                >
+                  <Users size={16} />
+                </button>
+              )}
               {/* Usuario y Logout */}
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-2 bg-black/10 px-3 py-1.5 rounded-full text-sm font-medium">
@@ -900,6 +913,9 @@ function AppContent() {
 
       {/* Drawer del Carrito */}
       <CartDrawer />
+
+      {/* Modal de gestión de usuarios (solo admin) */}
+      <GestionUsuarios abierto={mostrarUsuarios} onClose={() => setMostrarUsuarios(false)} />
     </div>
   );
 }

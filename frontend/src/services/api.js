@@ -109,4 +109,13 @@ export const crearCheckout = (items, sucursal_pickup) =>
 export const getMisPedidos = () => api.get('/orders/mis-pedidos');
 export const getOrden = (orderId) => api.get(`/orders/${orderId}`);
 
+// Gestión de usuarios de proveedores (solo admin)
+export const getUsuarios = () => api.get('/auth/usuarios');
+export const crearUsuario = (datos) => api.post('/auth/usuarios', datos);
+export const actualizarUsuario = (username, datos) =>
+  api.put(`/auth/usuarios/${encodeURIComponent(username)}`, datos);
+
+// Todas las órdenes (solo admin) — params: { username, estado, limit }
+export const getOrdenes = (params) => api.get('/orders', { params });
+
 export default api;

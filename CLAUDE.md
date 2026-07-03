@@ -59,6 +59,7 @@ catalogo-reluvsa/
 │   │   │   ├── TopVendidos.jsx       # Vitrina "Los más vendidos"
 │   │   │   ├── ProductImage.jsx      # Imagen con fallback + skeleton
 │   │   │   ├── CartDrawer.jsx        # Drawer del carrito
+│   │   │   ├── GestionUsuarios.jsx   # Modal admin: usuarios de proveedores
 │   │   │   ├── Login.jsx / OrderResult.jsx  # Login y resultado de pago
 │   │   │   └── DetalleProducto.jsx   # (No usado - modal está en App.jsx)
 │   │   ├── context/        # AuthContext (useAuth) y CartContext (useCart)
@@ -718,19 +719,46 @@ sqlite3 data/catalogo.db "SELECT COUNT(*) FROM productos_intercambiables"
 - `database.py` copia la DB al directorio de Railway si no existe o es más pequeña
 - Los cambios de schema se aplican con ALTER TABLE idempotente
 
-## Sistema de Autenticación
+## Sistema de Autenticación y Usuarios de Proveedores
 
-### Endpoint de Login
+### Modelo (Julio 2026)
+- **Admin (semilla)**: UN usuario definido por env vars en Railway (`ADMIN_USERNAME`/`ADMIN_PASSWORD`).
+  NO vive en la BD — garantiza acceso siempre. Es el único con herramientas de administración.
+- **Proveedores**: usuarios en la tabla `usuarios` de **`pedidos.db`** (volumen persistente
+  de Railway, `PEDIDOS_DB_PATH` — la misma BD de las órdenes de Stripe, ver `pedidos_db.py`).
+  Los crea/administra el admin desde el portal (modal "Usuarios de proveedores" en el header).
+  Rol `proveedor`: ve todo el catálogo y puede comprar; sin herramientas de admin.
+- El rol `visitor` se **eliminó** (login obligatorio, no hay acceso público). Las env vars
+  `VISITOR_USERNAME`/`VISITOR_PASSWORD` ya no se usan y pueden borrarse de Railway.
+- Contraseñas de proveedores **hasheadas con bcrypt**. La asigna el admin al crear/resetear.
+- Los tokens de proveedor se **revalidan contra la BD en cada request** (columna `activo`):
+  desactivar un proveedor lo saca de inmediato, sin esperar a que expire su JWT (24h).
+- ⚠️ Los usuarios NO viven en `catalogo.db`: la actualización mensual del catálogo
+  sobrescribe esa BD y los borraría. `pedidos.db` nunca se sobrescribe en deploys.
+
+### Endpoints
 ```
 POST /api/auth/login
-Body: { "username": "usuario", "password": "contraseña" }
-Response: { "access_token": "JWT...", "token_type": "bearer" }
+    Body: { "username", "password" }
+    Response: { "token", "role", "username" }        # role: 'admin' | 'proveedor'
+
+# Gestión de usuarios (solo admin):
+GET  /api/auth/usuarios                # lista con conteo de pedidos por proveedor
+POST /api/auth/usuarios                # { username, password, nombre_empresa, contacto? }
+PUT  /api/auth/usuarios/{username}     # parcial: { password?, nombre_empresa?, contacto?, activo? }
+                                       # activo=false = soft delete (conserva historial de pedidos)
+
+# Órdenes (solo admin) — base del futuro módulo de pedidos:
+GET /api/orders?username=&estado=&limit=   # todas las órdenes con empresa del proveedor
 ```
 
-### Configuración
-- Implementado en `backend/routers/auth.py`
-- JWT con expiración configurable
-- Roles de usuario para control de acceso futuro
+### Referencia Stripe ↔ proveedor
+- Cada orden en `pedidos.db` guarda el `username` del comprador (índice `idx_orders_username`).
+- La Checkout Session lleva `client_reference_id=order_id` y `metadata={order_id, username, empresa}`.
+- Cada proveedor tiene un **Stripe Customer** propio (`usuarios.stripe_customer_id`), creado
+  perezosamente en su primer checkout — en el dashboard de Stripe todos los pagos de un
+  proveedor quedan agrupados bajo su cliente. El admin paga sin Customer (no está en BD).
+- UI: `frontend/src/components/GestionUsuarios.jsx` (modal, botón 👥 en header solo admin).
 
 ## Proxy de Imágenes
 

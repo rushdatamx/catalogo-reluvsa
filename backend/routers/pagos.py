@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field
 
 from database import get_db
 from pedidos_db import get_pedidos_db, init_pedidos_db
-from routers.auth import get_current_user, UserInfo
+from routers.auth import get_current_user, require_admin, UserInfo
 
 router = APIRouter(prefix="/api", tags=["pagos"])
 
@@ -72,6 +72,46 @@ def _resolver_precio(row: sqlite3.Row) -> float:
     """Punto único de resolución de precio. Hoy: siempre precio_publico (con IVA).
     A futuro aquí se puede meter lógica de mayoreo por rol de usuario."""
     return row["precio_publico"] or 0.0
+
+
+def _get_or_create_stripe_customer(user: UserInfo) -> tuple[Optional[str], Optional[str]]:
+    """Devuelve (stripe_customer_id, nombre_empresa) para usuarios de BD (proveedores).
+
+    Crea el Customer en Stripe en el primer checkout del proveedor y lo persiste
+    en usuarios.stripe_customer_id — así en el dashboard de Stripe todos los pagos
+    de un proveedor quedan agrupados bajo su cliente. El admin (usuario semilla de
+    env vars, sin registro en BD) paga sin Customer, igual que antes."""
+    with get_pedidos_db() as pconn:
+        cursor = pconn.cursor()
+        cursor.execute(
+            "SELECT stripe_customer_id, nombre_empresa, contacto FROM usuarios WHERE username = ?",
+            (user.username,),
+        )
+        row = cursor.fetchone()
+
+    if row is None:
+        return None, None  # admin semilla u otro usuario sin registro en BD
+
+    empresa = row["nombre_empresa"]
+    if row["stripe_customer_id"]:
+        return row["stripe_customer_id"], empresa
+
+    try:
+        customer = stripe.Customer.create(
+            name=empresa or user.username,
+            description=f"Proveedor RELUVSA — usuario: {user.username}",
+            metadata={"username": user.username, "empresa": empresa or ""},
+        )
+    except stripe.StripeError:
+        # No bloquear el checkout por esto: la orden ya queda ligada por username.
+        return None, empresa
+
+    with get_pedidos_db() as pconn:
+        pconn.execute(
+            "UPDATE usuarios SET stripe_customer_id = ? WHERE username = ? AND stripe_customer_id IS NULL",
+            (customer.id, user.username),
+        )
+    return customer.id, empresa
 
 
 # --- Endpoints --------------------------------------------------------------
@@ -170,16 +210,26 @@ def crear_checkout(data: CheckoutRequest, user: UserInfo = Depends(get_current_u
                 (order_id, it["producto_id"], it["sku"], it["nombre"], it["cantidad"], it["precio_unitario"]),
             )
 
+    # Referencia Stripe ↔ proveedor: Customer persistente + empresa en metadata.
+    stripe_customer_id, nombre_empresa = _get_or_create_stripe_customer(user)
+
     # Crear la Checkout Session. NO pasar payment_method_types (dynamic methods).
     try:
-        session = stripe.checkout.Session.create(
+        session_params = dict(
             mode="payment",
             line_items=line_items,
             success_url=f"{FRONTEND_URL}/success?order={order_id}&session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{FRONTEND_URL}/cancel?order={order_id}",
             client_reference_id=str(order_id),
-            metadata={"order_id": str(order_id), "username": user.username},
+            metadata={
+                "order_id": str(order_id),
+                "username": user.username,
+                "empresa": nombre_empresa or "",
+            },
         )
+        if stripe_customer_id:
+            session_params["customer"] = stripe_customer_id
+        session = stripe.checkout.Session.create(**session_params)
     except stripe.StripeError as e:
         # Marcar la orden como fallida y devolver error.
         with get_pedidos_db() as pconn:
@@ -289,6 +339,48 @@ def _actualizar_estado_por_session(session_id: str, estado: str):
             "UPDATE orders SET estado = ? WHERE stripe_session_id = ? AND estado != 'pagado'",
             (estado, session_id),
         )
+
+
+@router.get("/orders")
+def listar_ordenes(
+    username: Optional[str] = None,
+    estado: Optional[str] = None,
+    limit: int = 100,
+    admin: UserInfo = Depends(require_admin),
+):
+    """Todas las órdenes (solo admin), con la empresa del proveedor. Base del
+    módulo de pedidos del portal. Filtrable por username y estado."""
+    where = []
+    params: list = []
+    if username:
+        where.append("o.username = ?")
+        params.append(username)
+    if estado:
+        where.append("o.estado = ?")
+        params.append(estado)
+    where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+
+    with get_pedidos_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            f"""SELECT o.id, o.username, u.nombre_empresa, o.stripe_session_id,
+                       o.tipo_entrega, o.sucursal_pickup, o.subtotal, o.total,
+                       o.estado, o.created_at, o.paid_at
+                FROM orders o
+                LEFT JOIN usuarios u ON u.username = o.username
+                {where_sql}
+                ORDER BY o.created_at DESC
+                LIMIT ?""",
+            (*params, max(1, min(limit, 500))),
+        )
+        pedidos = [dict(row) for row in cursor.fetchall()]
+        for p in pedidos:
+            cursor.execute(
+                "SELECT sku, nombre, cantidad, precio_unitario FROM order_items WHERE order_id = ?",
+                (p["id"],),
+            )
+            p["items"] = [dict(r) for r in cursor.fetchall()]
+    return {"pedidos": pedidos}
 
 
 @router.get("/orders/mis-pedidos")
