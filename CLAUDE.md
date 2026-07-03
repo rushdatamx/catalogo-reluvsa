@@ -44,15 +44,24 @@ catalogo-reluvsa/
 │       ├── reprocesar_skus_alternos.py  # Re-extrae skus_alternos con regex mejorado
 │       ├── procesar_productos_nuevos.py # Procesa productos recién importados
 │       ├── actualizar_precios_excel.py  # Actualiza precios (IVA) + inventario desde Excel
+│       ├── actualizar_top_vendidos.py   # Actualiza ranking de más vendidos (mensual)
 │       └── validar_*.py                 # Scripts de validación
-├── frontend/               # React SPA
+├── frontend/               # React SPA — VER frontend/ARQUITECTURA.md
+│   ├── ARQUITECTURA.md     # 📘 Guía completa del frontend (leer antes de tocar)
 │   ├── src/
-│   │   ├── App.jsx         # Componente principal con modal de detalle
-│   │   ├── lib/utils.js    # Utilidad cn() para clases condicionales
+│   │   ├── App.jsx         # Componente principal con modal de detalle inline
+│   │   ├── lib/
+│   │   │   ├── utils.js       # Utilidad cn() para clases condicionales
+│   │   │   └── categorias.js  # Nombres amigables de departamentos
 │   │   ├── components/
 │   │   │   ├── FiltrosCascada.jsx    # Filtros condicionales (sidebar)
-│   │   │   ├── ListaProductos.jsx    # Grid de productos
+│   │   │   ├── BarraCategorias.jsx   # Barra de categorías estilo Amazon
+│   │   │   ├── TopVendidos.jsx       # Vitrina "Los más vendidos"
+│   │   │   ├── ProductImage.jsx      # Imagen con fallback + skeleton
+│   │   │   ├── CartDrawer.jsx        # Drawer del carrito
+│   │   │   ├── Login.jsx / OrderResult.jsx  # Login y resultado de pago
 │   │   │   └── DetalleProducto.jsx   # (No usado - modal está en App.jsx)
+│   │   ├── context/        # AuthContext (useAuth) y CartContext (useCart)
 │   │   ├── services/
 │   │   │   └── api.js      # Servicios API con axios
 │   │   └── styles.css      # Estilos CSS + Tailwind
@@ -282,8 +291,26 @@ POST /api/auth/login
 
 ## Frontend - Estructura de Componentes
 
+> 📘 **Para trabajar en el frontend, lee primero `frontend/ARQUITECTURA.md`** — guía
+> completa de estructura, convenciones, colores de marca, API y patrones. Esta sección
+> es solo un resumen.
+
+Componentes principales (`frontend/src/`):
+- `App.jsx` — componente principal (~930 líneas): estado de filtros, header, buscador,
+  barra de categorías, grid, paginación y **modal de detalle inline**.
+- `components/BarraCategorias.jsx` — barra horizontal estilo Amazon bajo el buscador.
+- `components/TopVendidos.jsx` — vitrina "Los más vendidos" (carrusel + pestañas).
+- `components/ProductImage.jsx` — imagen con fallback + skeleton (reutilizable).
+- `components/FiltrosCascada.jsx` — sidebar de filtros en cascada.
+- `components/CartDrawer.jsx` / `Login.jsx` / `OrderResult.jsx` — carrito, login, resultado de pago.
+- `context/AuthContext.jsx` (`useAuth`) y `context/CartContext.jsx` (`useCart`, `puedeComprar`).
+- `lib/categorias.js` — nombres amigables de departamentos (compartido barra/vitrina).
+- `services/api.js` — **todas** las llamadas API.
+
 ### App.jsx (Componente Principal)
-- Estado de filtros con 19 campos
+- Estado de filtros con 23 campos
+- **Barra de categorías** (estilo Amazon) debajo del buscador
+- **Vitrina "Más vendidos"** en la portada (cuando no hay filtros ni búsqueda: `vistaPortada`)
 - **Botones Exportar Excel/PDF** en header de resultados (visibles cuando hay productos)
 - Modal de detalle de producto **inline** (NO usa DetalleProducto.jsx)
 - Secciones del modal:
@@ -359,6 +386,51 @@ El filtro de grupo aparece en la sección "Compatibilidad Vehicular" y se filtra
 - Marca del producto
 - Filtros vehiculares (marca, modelo, año, motor)
 
+## Top de Más Vendidos
+
+### Concepto
+Ranking mensual de los productos más vendidos (análisis 80-20 que exporta el cliente).
+Alimenta la **vitrina "Los más vendidos"** en la portada del frontend (estilo Amazon/MercadoLibre).
+
+### Datos
+- Columna `productos.ranking_ventas INTEGER` (NULL = no está en el top). ALTER idempotente en `database.py`.
+- Fuente: `data/top-mas-vendidos.xlsx` — 3 columnas: `Top` (rank), `SKU`, `Descripcion`.
+- El SKU del archivo hace match **directo** con `productos.sku` (la Clave interna), NO con `sku_real`.
+  ~97% de las filas (486/500) hacen match exacto; el resto son mano de obra / servicios /
+  paquetes (prefijos `300...`, `1982...`) que no son productos físicos y se omiten.
+
+### Actualización mensual (cuando el cliente manda el nuevo archivo)
+```bash
+# 1. Colocar el archivo nuevo en data/top-mas-vendidos.xlsx (mismo nombre, mismas 3 columnas)
+# 2. Desde /backend:
+cd backend
+python3 scripts/actualizar_top_vendidos.py   # backup + limpia ranking + repuebla + reporte
+
+# 3. Copiar BD y deploy (igual que actualizar_precios_excel.py):
+cp data/catalogo.db ../data/catalogo.db
+git add backend/data/catalogo.db data/catalogo.db
+git commit -m "Update top más vendidos"
+git push
+```
+El script `actualizar_top_vendidos.py` hace backup, limpia el ranking anterior (reset a NULL),
+y repuebla por match de SKU exacto. Genera un reporte con los SKUs sin match.
+
+### Endpoints
+```
+GET /api/productos/top-vendidos?departamento=&con_inventario=true&limit=20
+    # Top ordenado por ranking_ventas ASC (1 = más vendido). Filtrable por categoría.
+GET /api/productos/top-vendidos/categorias
+    # Departamentos presentes en el top, con conteo (para las pestañas de la vitrina)
+GET /api/filtros/departamentos-populares?limit=8
+    # Top N departamentos por # de productos con inventario (para la barra de categorías)
+```
+
+### UI
+- **Vitrina** (`components/TopVendidos.jsx`): carrusel horizontal, pestañas por categoría,
+  badges de ranking (🥇🥈🥉 top 3, #N el resto). Solo en la portada (`vistaPortada`).
+- **Barra de categorías** (`components/BarraCategorias.jsx`): "Más vendidos" + departamentos
+  populares; al hacer clic filtra el catálogo por departamento.
+
 ## Scripts de Utilidad
 
 ```bash
@@ -387,6 +459,9 @@ python3 scripts/reprocesar_skus_alternos.py
 
 # Actualizar precios (con IVA), inventario e insertar productos nuevos desde Excel
 python3 scripts/actualizar_precios_excel.py
+
+# Actualizar el ranking de más vendidos desde data/top-mas-vendidos.xlsx (mensual)
+python3 scripts/actualizar_top_vendidos.py
 
 # Validaciones
 python3 scripts/validar_100_porciento.py
