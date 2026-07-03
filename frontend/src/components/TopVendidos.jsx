@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Trophy, ChevronLeft, ChevronRight, Plus, CheckCircle, Flame } from 'lucide-react';
-import { getTopVendidos, getTopVendidosCategorias } from '../services/api';
+import { Trophy, ChevronLeft, ChevronRight, Plus, CheckCircle, Flame, FileSpreadsheet, FileText, Loader2 } from 'lucide-react';
+import { getTopVendidos, getTopVendidosCategorias, exportarExcel, exportarPDF } from '../services/api';
 import ProductImage from './ProductImage';
 import { useCart, puedeComprar } from '../context/CartContext';
 import { cn } from '../lib/utils';
@@ -106,6 +106,7 @@ export default function TopVendidos({ onProductoClick }) {
   const [categoriaActiva, setCategoriaActiva] = useState(''); // '' = todas
   const [productos, setProductos] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [exportando, setExportando] = useState(null); // 'excel' | 'pdf' | null
   const scrollRef = useRef(null);
 
   // Cargar categorías del top una sola vez
@@ -134,6 +135,38 @@ export default function TopVendidos({ onProductoClick }) {
     setAbierto(true);
   }, [agregar, setAbierto]);
 
+  // Exporta el ranking de más vendidos respetando la pestaña de categoría activa.
+  const handleExport = useCallback(async (formato) => {
+    setExportando(formato);
+    try {
+      const params = { solo_top_vendidos: true };
+      if (categoriaActiva) params.departamento = categoriaActiva;
+
+      const exportar = formato === 'excel' ? exportarExcel : exportarPDF;
+      const res = await exportar(params);
+
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      const sufijo = categoriaActiva ? `_${categoriaActiva}` : '';
+      const ext = formato === 'excel' ? 'xlsx' : 'pdf';
+      link.setAttribute('download', `mas_vendidos${sufijo}.${ext}`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      const msg = err.response?.status === 400
+        ? 'Demasiados productos para exportar.'
+        : err.response?.status === 404
+          ? 'No hay más vendidos para exportar en esta categoría.'
+          : 'Error al exportar. Intente de nuevo.';
+      alert(msg);
+    } finally {
+      setExportando(null);
+    }
+  }, [categoriaActiva]);
+
   const scroll = (dir) => {
     if (scrollRef.current) {
       scrollRef.current.scrollBy({ left: dir * 400, behavior: 'smooth' });
@@ -161,22 +194,51 @@ export default function TopVendidos({ onProductoClick }) {
             <p className="text-xs text-notion-text-secondary">Los favoritos de nuestros clientes</p>
           </div>
         </div>
-        {/* Flechas de navegación (desktop) */}
-        <div className="hidden sm:flex items-center gap-1">
-          <button
-            onClick={() => scroll(-1)}
-            className="p-2 rounded-full border border-notion-border hover:bg-notion-bg-subtle transition-colors"
-            aria-label="Anterior"
-          >
-            <ChevronLeft size={18} />
-          </button>
-          <button
-            onClick={() => scroll(1)}
-            className="p-2 rounded-full border border-notion-border hover:bg-notion-bg-subtle transition-colors"
-            aria-label="Siguiente"
-          >
-            <ChevronRight size={18} />
-          </button>
+        <div className="flex items-center gap-2">
+          {/* Botones de exportar el ranking */}
+          {!loading && productos.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => handleExport('excel')}
+                disabled={exportando !== null}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-notion-border text-xs font-medium text-notion-text-primary hover:bg-notion-bg-subtle transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Exportar más vendidos a Excel"
+              >
+                {exportando === 'excel'
+                  ? <Loader2 size={14} className="animate-spin" />
+                  : <FileSpreadsheet size={14} className="text-green-600" />}
+                <span className="hidden sm:inline">Excel</span>
+              </button>
+              <button
+                onClick={() => handleExport('pdf')}
+                disabled={exportando !== null}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-notion-border text-xs font-medium text-notion-text-primary hover:bg-notion-bg-subtle transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Exportar más vendidos a PDF"
+              >
+                {exportando === 'pdf'
+                  ? <Loader2 size={14} className="animate-spin" />
+                  : <FileText size={14} className="text-reluvsa-red" />}
+                <span className="hidden sm:inline">PDF</span>
+              </button>
+            </div>
+          )}
+          {/* Flechas de navegación (desktop) */}
+          <div className="hidden sm:flex items-center gap-1">
+            <button
+              onClick={() => scroll(-1)}
+              className="p-2 rounded-full border border-notion-border hover:bg-notion-bg-subtle transition-colors"
+              aria-label="Anterior"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <button
+              onClick={() => scroll(1)}
+              className="p-2 rounded-full border border-notion-border hover:bg-notion-bg-subtle transition-colors"
+              aria-label="Siguiente"
+            >
+              <ChevronRight size={18} />
+            </button>
+          </div>
         </div>
       </div>
 

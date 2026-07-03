@@ -57,9 +57,13 @@ def _build_filtered_query(
     ancho_llanta, relacion_llanta, diametro_llanta, tipo_llanta, capas_llanta,
     viscosidad, tipo_aceite, presentacion,
     grupo_bci, capacidad_cca, tamano_acumulador,
-    q,
+    q, solo_top_vendidos=False,
 ):
-    """Returns (select_sql, params) for the filtered product list (no pagination)."""
+    """Returns (select_sql, params) for the filtered product list (no pagination).
+
+    Si solo_top_vendidos=True, restringe al ranking de más vendidos
+    (ranking_ventas IS NOT NULL) y ordena por ese ranking ascendente.
+    """
 
     base_query = "FROM productos p"
     where_clauses: List[str] = []
@@ -95,6 +99,8 @@ def _build_filtered_query(
         where_clauses.append("p.inventario_total > 0")
     if solo_nuevos:
         where_clauses.append("p.created_at >= datetime('now', '-60 days')")
+    if solo_top_vendidos:
+        where_clauses.append("p.ranking_ventas IS NOT NULL")
 
     # Vehicle filters
     if marca_vehiculo:
@@ -222,6 +228,14 @@ def _build_filtered_query(
     if where_clauses:
         where_sql = "WHERE " + " AND ".join(where_clauses)
 
+    # En modo top vendidos ordenamos por el ranking (1 = más vendido);
+    # de lo contrario, por inventario como en el catálogo normal.
+    order_sql = (
+        "ORDER BY p.ranking_ventas ASC"
+        if solo_top_vendidos
+        else "ORDER BY p.inventario_total DESC, p.sku"
+    )
+
     select_sql = f"""
         SELECT DISTINCT
             p.id, p.sku, p.sku_real, p.departamento, p.marca, p.descripcion_original,
@@ -230,7 +244,7 @@ def _build_filtered_query(
             CASE WHEN p.created_at >= datetime('now', '-60 days') THEN 1 ELSE 0 END as es_nuevo
         {base_query}
         {where_sql}
-        ORDER BY p.inventario_total DESC, p.sku
+        {order_sql}
     """
     return select_sql, params
 
@@ -367,7 +381,7 @@ def _fetch_export_data(
     ancho_llanta, relacion_llanta, diametro_llanta, tipo_llanta, capas_llanta,
     viscosidad, tipo_aceite, presentacion,
     grupo_bci, capacidad_cca, tamano_acumulador,
-    q,
+    q, solo_top_vendidos=False,
 ) -> List[Dict[str, Any]]:
     """Fetch products + compatibilidades + intercambiables. Raises HTTPException."""
 
@@ -377,7 +391,7 @@ def _fetch_export_data(
         ancho_llanta, relacion_llanta, diametro_llanta, tipo_llanta, capas_llanta,
         viscosidad, tipo_aceite, presentacion,
         grupo_bci, capacidad_cca, tamano_acumulador,
-        q,
+        q, solo_top_vendidos,
     )
 
     with get_db() as conn:
@@ -437,6 +451,7 @@ async def exportar_excel(
     capacidad_cca: Optional[str] = Query(None),
     tamano_acumulador: Optional[str] = Query(None),
     q: Optional[str] = Query(None, max_length=200),
+    solo_top_vendidos: bool = Query(False, description="Exportar solo los productos del ranking de más vendidos"),
 ):
     """Exporta productos filtrados a Excel con imágenes embebidas."""
     products = _fetch_export_data(
@@ -445,7 +460,7 @@ async def exportar_excel(
         ancho_llanta, relacion_llanta, diametro_llanta, tipo_llanta, capas_llanta,
         viscosidad, tipo_aceite, presentacion,
         grupo_bci, capacidad_cca, tamano_acumulador,
-        q,
+        q, solo_top_vendidos,
     )
 
     # Download images
@@ -602,6 +617,7 @@ async def exportar_pdf(
     capacidad_cca: Optional[str] = Query(None),
     tamano_acumulador: Optional[str] = Query(None),
     q: Optional[str] = Query(None, max_length=200),
+    solo_top_vendidos: bool = Query(False, description="Exportar solo los productos del ranking de más vendidos"),
 ):
     """Exporta productos filtrados a PDF con imágenes embebidas."""
     products = _fetch_export_data(
@@ -610,7 +626,7 @@ async def exportar_pdf(
         ancho_llanta, relacion_llanta, diametro_llanta, tipo_llanta, capas_llanta,
         viscosidad, tipo_aceite, presentacion,
         grupo_bci, capacidad_cca, tamano_acumulador,
-        q,
+        q, solo_top_vendidos,
     )
 
     # Download images
