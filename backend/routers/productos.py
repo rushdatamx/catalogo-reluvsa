@@ -371,7 +371,7 @@ def listar_productos(
                 END as es_nuevo
             {base_query}
             {where_sql}
-            ORDER BY p.inventario_total DESC, p.sku
+            ORDER BY p.created_at DESC, p.inventario_total DESC, p.sku
             LIMIT ? OFFSET ?
         """
         cursor.execute(select_query, params + [limit, offset])

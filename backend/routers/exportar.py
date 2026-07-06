@@ -231,11 +231,11 @@ def _build_filtered_query(
         where_sql = "WHERE " + " AND ".join(where_clauses)
 
     # En modo top vendidos ordenamos por el ranking (1 = más vendido);
-    # de lo contrario, por inventario como en el catálogo normal.
+    # de lo contrario, más nuevos primero como en el catálogo normal.
     order_sql = (
         "ORDER BY p.ranking_ventas ASC"
         if solo_top_vendidos
-        else "ORDER BY p.inventario_total DESC, p.sku"
+        else "ORDER BY p.created_at DESC, p.inventario_total DESC, p.sku"
     )
 
     select_sql = f"""
