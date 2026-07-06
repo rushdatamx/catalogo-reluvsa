@@ -33,72 +33,80 @@ class ParserSinCompatibilidad(BaseParser):
 # LLANTAS - Sin compatibilidad vehicular
 # ============================================================
 
-class TornelParser(ParserSinCompatibilidad):
+class ParserLlanta(ParserSinCompatibilidad):
+    """Base para marcas de llantas: activa la limpieza especial de nombre
+    (medida al final) aunque el producto venga en otro departamento."""
+    ES_LLANTA = True
+
+
+class TornelParser(ParserLlanta):
     """Parser para TORNEL (llantas) - SIN COMPATIBILIDAD"""
     pass
 
 
-class NereusParser(ParserSinCompatibilidad):
+class NereusParser(ParserLlanta):
     """Parser para NEREUS (llantas) - SIN COMPATIBILIDAD"""
     pass
 
 
-class GoodrideParser(ParserSinCompatibilidad):
+class GoodrideParser(ParserLlanta):
     """Parser para GOODRIDE (llantas) - SIN COMPATIBILIDAD"""
     pass
 
 
 class HankookParser(ParserSinCompatibilidad):
-    """Parser para HANKOOK (llantas) - SIN COMPATIBILIDAD"""
+    """Parser para HANKOOK - SIN COMPATIBILIDAD.
+    OJO: no hereda de ParserLlanta porque en el catalogo HANKOOK
+    son acumuladores (SISTEMA ELECTRICO), no llantas."""
     pass
 
 
-class BktParser(ParserSinCompatibilidad):
+class BktParser(ParserLlanta):
     """Parser para BKT (llantas agrícolas) - SIN COMPATIBILIDAD"""
     pass
 
 
-class CarlisleParser(ParserSinCompatibilidad):
+class CarlisleParser(ParserLlanta):
     """Parser para CARLISLE (llantas) - SIN COMPATIBILIDAD"""
     pass
 
 
-class ChaoyangParser(ParserSinCompatibilidad):
+class ChaoyangParser(ParserLlanta):
     """Parser para CHAOYANG (llantas moto) - SIN COMPATIBILIDAD"""
     pass
 
 
-class EpsilonParser(ParserSinCompatibilidad):
+class EpsilonParser(ParserLlanta):
     """Parser para EPSILON (llantas) - SIN COMPATIBILIDAD"""
     pass
 
 
-class HiflyParser(ParserSinCompatibilidad):
+class HiflyParser(ParserLlanta):
     """Parser para HIFLY (llantas) - SIN COMPATIBILIDAD"""
     pass
 
 
-class MastertrackParser(ParserSinCompatibilidad):
+class MastertrackParser(ParserLlanta):
     """Parser para MASTERTRACK (llantas) - SIN COMPATIBILIDAD"""
     pass
 
 
-class MilestarParser(ParserSinCompatibilidad):
+class MilestarParser(ParserLlanta):
     """Parser para MILESTAR (llantas) - SIN COMPATIBILIDAD"""
     pass
 
 
-class TriangleParser(ParserSinCompatibilidad):
+class TriangleParser(ParserLlanta):
     """Parser para TRIANGLE (llantas) - SIN COMPATIBILIDAD"""
     pass
 
 
-class WestlakeParser(ParserSinCompatibilidad):
+class WestlakeParser(ParserLlanta):
     """Parser para WESTLAKE (llantas) - SIN COMPATIBILIDAD"""
     pass
 
 
-class BfgoodrichParser(ParserSinCompatibilidad):
+class BfgoodrichParser(ParserLlanta):
     """Parser para BFGOODRICH (llantas) - SIN COMPATIBILIDAD"""
     pass
 

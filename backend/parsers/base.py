@@ -652,7 +652,9 @@ class BaseParser:
 
         descripcion = descripcion.strip()
         dept_upper = departamento.upper() if departamento else ''
-        es_llanta = dept_upper == 'LLANTAS'
+        # ES_LLANTA en el parser cubre llantas mal clasificadas en otro depto
+        # (ej. NEREUS en AFINACION): una marca de llantas solo vende llantas.
+        es_llanta = dept_upper == 'LLANTAS' or getattr(self, 'ES_LLANTA', False)
         # Departamentos que NO tienen compatibilidad vehicular
         es_sin_compat = dept_upper in (
             'LLANTAS', 'LUBRICACIÓN', 'LUBRICACION',
@@ -660,12 +662,13 @@ class BaseParser:
             'HERREMIENTA Y EQUIPOS', 'SERVICIOS TALLER',
         )
 
+        # Fase 2: Llantas - manejo especial (con la descripcion cruda:
+        # el strip de SKUs confunde medidas y modelos tipo T2400 con codigos)
+        if es_llanta:
+            return self._limpiar_nombre_llanta(descripcion, descripcion)
+
         # Fase 1: Strip SKUs del inicio
         nombre = self._limpiar_skus_inicio_nombre(descripcion)
-
-        # Fase 2: Llantas - manejo especial
-        if es_llanta:
-            return self._limpiar_nombre_llanta(nombre, descripcion)
 
         # Fase 3: Strip info vehicular (solo para autopartes con compatibilidad)
         if not es_sin_compat:
@@ -795,53 +798,106 @@ class BaseParser:
     def _limpiar_nombre_llanta(self, nombre: str, descripcion_original: str = '') -> str:
         """Manejo especial para nombres de llantas.
 
-        Extrae dimensiones y las coloca al final del nombre.
-        Input:  "235/55 R19 105H LLANTA CONTINENTAL CROSSCONTACT LX SPORT"
-        Output: "LLANTA CONTINENTAL CROSSCONTACT LX SPORT 235/55 R19"
+        Quita la medida y los codigos del texto (vengan antes o despues de
+        la palabra LLANTA, preservando el modelo tipo "REAL JK" o "T2400")
+        y coloca la medida al final del nombre.
+        Input:  "195/65 R15 89V REAL JK TORNEL LLANTA"
+        Output: "REAL JK TORNEL LLANTA 195/65 R15"
+        Soporta medidas convencionales de camion: "750 16 8C" -> "750-16 8C".
         """
         # Extraer dimension de la descripcion original (tiene mas info)
         src = descripcion_original or nombre
         dimension_str = ""
+        rin = ""
 
-        # Patron radial: 235/55 R19
-        match_radial = re.search(r'(\d{3})/(\d{2})\s*R\s*(\d{2})', src, re.IGNORECASE)
+        # Patron radial: 235/55 R19, 225/55 ZR17, 195/70 R15C (relacion de 2-3 digitos)
+        match_radial = re.search(r'(\d{3})/(\d{2,3})\s*(Z?)R\s*(\d{2})\s?(C?)\b', src, re.IGNORECASE)
         if match_radial:
-            dimension_str = f"{match_radial.group(1)}/{match_radial.group(2)} R{match_radial.group(3)}"
+            z = match_radial.group(3).upper()
+            c = match_radial.group(5).upper()
+            dimension_str = f"{match_radial.group(1)}/{match_radial.group(2)} {z}R{match_radial.group(4)}{c}"
+            rin = match_radial.group(4)
         else:
             # Patron LT: 31X10.5 R15
             match_lt = re.search(r'(\d{2,3})X(\d+\.?\d*)\s*R\s*(\d{2})', src, re.IGNORECASE)
             if match_lt:
                 dimension_str = f"{match_lt.group(1)}X{match_lt.group(2)} R{match_lt.group(3)}"
+                rin = match_lt.group(3)
+            else:
+                # Patron camion radial: 11R 22.5, 11R 24.5
+                match_camion = re.search(r'\b(\d{1,2})R\s+(\d{2}(?:\.\d)?)\b', src, re.IGNORECASE)
+                if match_camion:
+                    dimension_str = f"{match_camion.group(1)}R {match_camion.group(2)}"
+                    rin = ""
+                else:
+                    # Patron metrico sin relacion: 195 R15C, 185 R14 (carga/comercial)
+                    match_metrico = re.search(r'\b(\d{3})\s*R(\d{2})(C?)\b', src, re.IGNORECASE)
+                    if match_metrico:
+                        dimension_str = f"{match_metrico.group(1)} R{match_metrico.group(2)}{match_metrico.group(3).upper()}"
+                        rin = match_metrico.group(2)
+                    else:
+                        # Patron agricola/industrial: "14.9 38", "11L 15", "19.5 L24" al inicio
+                        match_agri = re.match(r'^(\d{1,2}(?:\.\d|L))[\s-]+(L?)(\d{2})\b', src, re.IGNORECASE)
+                        if match_agri:
+                            dimension_str = f"{match_agri.group(1).upper()}{match_agri.group(2).upper()}-{match_agri.group(3)}"
+                            rin = match_agri.group(3)
+                        else:
+                            # Patron convencional (camion): "750 16", "1000 20", "10-15" al inicio
+                            match_conv = re.match(r'^(\d{2,4})[\s-](\d{2})\b', src)
+                            if match_conv:
+                                dimension_str = f"{match_conv.group(1)}-{match_conv.group(2)}"
+                                rin = match_conv.group(2)
+                        # En convencionales/agricolas las capas (6C, 14C) son parte de la medida
+                        if dimension_str:
+                            match_capas = re.search(r'\b(\d{1,2}C)\b', src)
+                            if match_capas:
+                                dimension_str += f" {match_capas.group(1)}"
 
-        # Buscar inicio del nombre real (LLANTA, NEUMATICO o marca)
+        # Capas en formato PR (8PR, "10 PR") tambien son parte de la medida
+        # (solo si no se agregaron ya capas en formato "14C")
+        if dimension_str and not re.search(r'\s\d{1,2}C$', dimension_str):
+            match_pr = re.search(r'\b(\d{1,2})\s?PR\b', src, re.IGNORECASE)
+            if match_pr:
+                dimension_str += f" {match_pr.group(1)}PR"
+
         nombre_limpio = nombre
-        for keyword in ['LLANTA', 'NEUMATICO']:
-            idx = nombre.upper().find(keyword)
-            if idx >= 0:
-                nombre_limpio = nombre[idx:]
-                break
-        else:
-            # Si no encontramos tipo, al menos strip codigos
-            nombre_limpio = self._limpiar_skus_inicio_nombre(nombre)
 
-        # Remover codigos de carga/velocidad (105H, 91V, 94W, etc.)
+        # Remover dimensiones embebidas (radial, LT, metrica, convencional al inicio)
+        nombre_limpio = re.sub(r'\d{3}/\d{2,3}\s*Z?R\s*\d{2}\s?C?\b', '', nombre_limpio, flags=re.IGNORECASE)
+        nombre_limpio = re.sub(r'\d{2,3}X\d+\.?\d*\s*R\s*\d{2}', '', nombre_limpio, flags=re.IGNORECASE)
+        nombre_limpio = re.sub(r'\b\d{3}\s*R\d{2}C?\b', '', nombre_limpio, flags=re.IGNORECASE)
+        nombre_limpio = re.sub(r'\b\d{1,2}R\s+\d{2}(?:\.\d)?\b', '', nombre_limpio, flags=re.IGNORECASE)
+        nombre_limpio = re.sub(r'^\d{1,2}(?:\.\d|L)[\s-]+L?\d{2}\b', '', nombre_limpio, flags=re.IGNORECASE)
+        nombre_limpio = re.sub(r'^\d{2,4}[\s-]\d{2}\b', '', nombre_limpio)
+
+        # Remover indices de carga/velocidad (105H, 91V, 144/139K, 106/104R) y capas PR
+        nombre_limpio = re.sub(r'\b\d{2,3}/\d{2,3}[A-Z]\b', '', nombre_limpio)
         nombre_limpio = re.sub(r'\b\d{2,3}[A-Z]{1,2}\b', '', nombre_limpio)
+        nombre_limpio = re.sub(r'\b\d{2,3}\s+[A-Z](?=\s|$)', '', nombre_limpio)
+        nombre_limpio = re.sub(r'\b\d{1,2}\s?PR\b', '', nombre_limpio, flags=re.IGNORECASE)
 
-        # Remover dimensiones embebidas
-        nombre_limpio = re.sub(r'\d{3}/\d{2}\s*R\s*\d{2}', '', nombre_limpio)
-        nombre_limpio = re.sub(r'\d{2,3}X\d+\.?\d*\s*R\s*\d{2}', '', nombre_limpio)
+        # Remover rin duplicado (ZR18, RZ16) sin tocar modelos tipo T2400
+        if rin:
+            nombre_limpio = re.sub(rf'\b[A-Z]{{1,2}}{rin}\b', '', nombre_limpio)
 
-        # Remover capas (6C, 8C, 10C)
+        # Remover capas (6C, 8C, 14C), "PR" huerfano y camara (S/C, C/C)
         nombre_limpio = re.sub(r'\b\d{1,2}C\b', '', nombre_limpio)
+        nombre_limpio = re.sub(r'\bPR\b', '', nombre_limpio)
+        nombre_limpio = re.sub(r'\b[CS]/C\b', '', nombre_limpio)
 
-        # Limpiar espacios multiples
-        nombre_limpio = re.sub(r'\s{2,}', ' ', nombre_limpio).strip()
+        # Limpiar espacios multiples y numeros sueltos residuales al inicio
+        nombre_limpio = re.sub(r'\s{2,}', ' ', nombre_limpio).strip(' ,.-/')
+        nombre_limpio = re.sub(r'^\d{2,5}\s+', '', nombre_limpio)
+
+        # Remover tokens huerfanos de construccion al inicio (TT=con camara,
+        # TL=tubeless, LT=light truck ya representado en la medida)
+        nombre_limpio = re.sub(r'^(?:(?:TT|TL|LT|TBL)\s+)+', '', nombre_limpio)
 
         # Agregar dimension al final
         if dimension_str and dimension_str not in nombre_limpio:
             nombre_limpio = f"{nombre_limpio} {dimension_str}"
 
-        return nombre_limpio
+        return nombre_limpio.strip()
 
     def _limpieza_final_nombre(self, nombre: str) -> str:
         """Limpieza final del nombre: trailing basura, longitud, etc."""
