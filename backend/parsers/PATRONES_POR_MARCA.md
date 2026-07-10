@@ -311,8 +311,14 @@ MEDIDA [CAPAS] [MODELO] JK TORNEL LLANTA [TIPO]
 - `31X10.5 R15 LT 6C LN DEPORTIVA JK TORNEL LLANTA DEPORTIVA`
 - `1000 20 14C T2400 JK TORNEL LLANTA CONVENCIONAL PISO EXTRA`
 - `205/60 R13 S/C DIRECCIONAL JK TORNEL LLANTA DIRECCIONAL`
+- `11R 22.5 16PR VALIANT TORNEL LUL4 TODA POSICION LLANTA RADIAL` (camión)
+- `14.9 24 8C TT TORNEL JKTYRE FIELD KING RF LLANTA AGRICOLA` (agrícola)
 
 **NO EXTRAER COMPATIBILIDADES** - Solo medidas de llanta
+
+**Nombre limpio (Julio 2026):** el modelo viene ANTES de la palabra LLANTA y se
+preserva; la medida va al final. Ej: `T2400 JK TORNEL LLANTA CONVENCIONAL PISO
+EXTRA 1000-20 14C`. Ver "Limpieza de nombres de llantas" en CLAUDE.md.
 
 ---
 
@@ -326,9 +332,14 @@ MEDIDA LLANTA NEREUS MODELO
 **Ejemplos:**
 - `175/70 R13 82T LLANTA NEREUS NS601`
 - `195/55 R16 RZ16 91W LLANTA NEREUS NS601 VERSA`
+- `195 R15C 106/104R 8PR LLANTA NEREUS NS913` (métrica comercial)
 
 **NO EXTRAER COMPATIBILIDADES** - Solo medidas de llanta
 (Nota: Algunos mencionan modelo de auto como referencia, no como compatibilidad)
+
+**Nombre limpio (Julio 2026):** medida al final. Ej: `LLANTA NEREUS NS913 195 R15C 8PR`.
+OJO: hay 2 NEREUS clasificados en dept AFINACION; el tratamiento de llanta se activa
+por marca (`ParserLlanta` / `ES_LLANTA`), no solo por departamento.
 
 ---
 
@@ -433,9 +444,11 @@ AKRON[.MEDIDA] TIPO SAE [VISCOSIDAD] [CLASIFICACION]
 
 ### SIN COMPATIBILIDADES (No crear parser):
 
-**Llantas:**
-- BFGOODRICH, BKT, CARLISLE, CHAOYANG, EPSILON, GOODRIDE, HANKOOK,
+**Llantas** (heredan de `ParserLlanta`, medida al final del nombre):
+- BFGOODRICH, BKT, CARLISLE, CHAOYANG, EPSILON, GOODRIDE,
   HIFLY, MASTERTRACK, MILESTAR, NEREUS, TORNEL, TRIANGLE, WESTLAKE
+- ⚠️ HANKOOK NO es marca de llantas en este catálogo: sus productos son
+  acumuladores (dept SISTEMA ELECTRICO). Hereda de `ParserSinCompatibilidad`.
 
 **Aceites/Químicos:**
 - ABRO, AKRON, BARDAHL, CASTROL, CHEVRON, FLEX QUIM, MOBIL,

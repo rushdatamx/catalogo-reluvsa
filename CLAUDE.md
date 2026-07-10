@@ -227,6 +227,10 @@ GET /api/productos
     ?capacidad_cca=550
     ?tamano_acumulador=...
 
+    # Orden (Julio 2026): más nuevos primero (created_at DESC),
+    # desempate por inventario_total DESC. Aplica también a /api/exportar/*
+    # (el modo solo_top_vendidos ordena por ranking_ventas ASC).
+
 GET /api/productos/buscar?q=termino&limit=20
 GET /api/productos/{sku}
     # Retorna: producto + compatibilidades + características + intercambiables
@@ -673,6 +677,39 @@ rangos de años y el nombre quedaba truncado a solo "LIMPIAPARABRISAS" (48 produ
 RELUVSA, dept ACCESORIO, corregidos en Julio 2026). Las medidas sencillas (`16''`) nunca
 tuvieron problema. Ojo: el dept **ACCESORIO** SÍ pasa por `_strip_vehicle_info` (no está
 en la lista `es_sin_compat`), aunque la marca use `ParserSinCompatibilidad`.
+
+### Limpieza de nombres de llantas: medida al final (fix Julio 2026)
+
+`_limpiar_nombre_llanta()` (en `base.py`) coloca la **medida siempre al final** del
+nombre y preserva el modelo aunque venga antes de la palabra LLANTA (caso TORNEL:
+"REAL JK", "T2400"). Ejemplo: `195/65 R15 89V REAL JK TORNEL LLANTA` →
+`REAL JK TORNEL LLANTA 195/65 R15`. Formatos de medida soportados:
+
+| Formato | Ejemplo entrada | Medida extraída |
+|---------|----------------|-----------------|
+| Radial | `205/60 R13`, `225/55 ZR17`, `195/70 R15C` | igual, normalizada |
+| LT | `31X10.5 R15` | `31X10.5 R15` |
+| Camión radial | `11R 22.5` | `11R 22.5` |
+| Métrica comercial | `195 R15C 106/104R 8PR` | `195 R15C 8PR` |
+| Agrícola/industrial | `14.9 38`, `11L 15`, `19.5 L24` | `14.9-38`, `11L-15`, `19.5L-24` |
+| Convencional camión | `750 16 8C`, `1000 20 14C` | `750-16 8C`, `1000-20 14C` |
+
+Notas importantes:
+- La ruta de llanta se activa por departamento LLANTAS **o por marca**: los parsers de
+  marcas de llantas heredan de `ParserLlanta` (`ES_LLANTA = True`, en
+  `sin_compatibilidad.py`). Esto cubre llantas mal clasificadas en otro dept
+  (ej. 2 NEREUS en AFINACION).
+- ⚠️ **HANKOOK NO hereda de ParserLlanta**: en este catálogo los productos HANKOOK son
+  acumuladores (dept SISTEMA ELECTRICO), no llantas.
+- La ruta de llantas NO pasa por el strip de SKUs iniciales (confundía medidas y modelos
+  tipo `T2400` con códigos); recibe la descripción cruda.
+- Se eliminan del nombre: índices de carga/velocidad (`91V`, `106/104R`, `109 S`),
+  capas (`8C`, `16PR`), cámara (`S/C`, `C/C`) y tokens huérfanos (`TT`, `TL`, `LT`).
+- En Julio 2026 se reprocesaron 380 nombres (NEREUS 101, TORNEL 258, MOBIL 21). Los
+  MOBIL truncados a solo "MOBIL" eran residuo de un pipeline viejo que confundía la
+  presentación (`5L`, `4.73L`) con cilindrada de motor. Otras marcas de llantas
+  (HARVEST KING, POWER KING, etc., ~75 productos) NO se reprocesaron: sus nombres
+  mejorarán solo si su descripción cambia en un Excel mensual (modo MERGE).
 
 ### Marcas con Parser Específico
 82 parsers en `backend/parsers/` para marcas como: AC DELCO, GONHER, SYD, INJETECH, MONROE, NGK, BOSCH, etc.
