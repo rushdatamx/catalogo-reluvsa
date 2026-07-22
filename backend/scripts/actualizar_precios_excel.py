@@ -26,27 +26,29 @@ DB_PATH = Path(__file__).parent.parent / "data" / "catalogo.db"
 EXCEL_PATH = Path(__file__).parent.parent.parent / "data" / "limpieza-catalogo.xlsx"
 SHEET_NAME = "TODOS LOS PRODUCTOS JULIO"
 
-# Columnas del Excel
+# Columnas del Excel (formato Julio 2026 v2: 23 columnas — trae una columna
+# 'Descripcion' extra en la posición 1, duplicado exacto de la col 10, que
+# recorre todo +1 respecto al formato anterior de 22 columnas)
 COL_SKU = 0               # Clave
-COL_SKU_REAL = 2          # SKU (número de parte comercial; vacío en ~81% de productos)
-COL_GRUPO = 1             # Grupo -> Nombre
-COL_DEPARTAMENTO = 4      # Departamento -> Nombre
-COL_MARCA = 5             # Marcas Prodcuto -> Nombre
-COL_ULTIMA_COMPRA = 7     # Última Compra
-COL_DESCRIPCION = 9       # Descripcion
-COL_PRECIO_PUBLICO = 10   # Precio Tres C/IVA (público, más alto) - col K
-COL_PRECIO_MAYOREO = 11   # Precio Cinco C/IVA (mayoreo) - col L
-COL_IMAGEN_URL = 14       # Variant Scr
-COL_INVENTARIO_TOTAL = 21 # Total Almacenes
+COL_SKU_REAL = 3          # SKU (número de parte comercial; vacío en ~81% de productos)
+COL_GRUPO = 2             # Grupo -> Nombre
+COL_DEPARTAMENTO = 5      # Departamento -> Nombre
+COL_MARCA = 6             # Marcas Prodcuto -> Nombre
+COL_ULTIMA_COMPRA = 8     # Última Compra
+COL_DESCRIPCION = 10      # Descripcion
+COL_PRECIO_PUBLICO = 11   # Precio Tres C/IVA (público, más alto)
+COL_PRECIO_MAYOREO = 12   # Precio Cinco C/IVA (mayoreo)
+COL_IMAGEN_URL = 15       # Variant Scr
+COL_INVENTARIO_TOTAL = 22 # Total Almacenes
 
 # Mapeo: columna Excel -> nombre de sucursal en BD
 SUCURSALES = {
-    15: 'Suc. Carrera',
-    16: 'Suc. Berriozabal',
-    17: 'CEDIS',
-    18: 'Suc. 31 Juarez',
-    19: 'FULL',
-    20: 'Suc. E-commerce',
+    16: 'Suc. Carrera',
+    17: 'Suc. Berriozabal',
+    18: 'CEDIS',
+    19: 'Suc. 31 Juarez',
+    20: 'FULL',
+    21: 'Suc. E-commerce',
 }
 
 # Condiciones para productos nuevos
