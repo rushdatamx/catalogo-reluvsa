@@ -500,34 +500,38 @@ python3 scripts/validar_nombres.py
 ## Actualización de Datos desde Excel (MÉTODO PRINCIPAL)
 
 ### Contexto
-Los datos se actualizan desde un archivo Excel (.xlsx) que RELUVSA exporta periódicamente. El archivo siempre viene con el **mismo formato de 22 columnas**. Los precios en el Excel ya vienen **CON IVA**.
+Los datos se actualizan desde un archivo Excel (.xlsx) que RELUVSA exporta periódicamente. Los precios en el Excel ya vienen **CON IVA**. ⚠️ El formato ha cambiado con el tiempo — **siempre validar los headers contra las constantes `COL_*` del script** antes de ejecutar:
+- Hasta Jul 2026 (corte 13 jul): 22 columnas.
+- Desde Jul 2026 (corte 22 jul): **23 columnas** — trae una columna `Descripcion` extra en la posición 1 (duplicado exacto de la col 10) que recorre todo +1.
+- Desde Jul 2026 la fuente de precios es **Precio Tres/Cinco C/IVA** (antes era Precio abierto 3/5).
 
-### Formato del Excel (22 columnas)
+### Formato del Excel (23 columnas, desde Jul 2026)
 
 | Col | Columna | Uso |
 |-----|---------|-----|
 | 0 | Clave | SKU del producto |
-| 1 | Grupo -> Nombre | grupo_producto (para nuevos) |
-| 2 | SKU | sku_real (número de parte comercial; vacío en ~81%) |
-| 3 | Codigo de Barras | (ignorado) |
-| 4 | Departamento -> Nombre | departamento (para nuevos) |
-| 5 | Marcas Prodcuto -> Nombre | marca (para nuevos) |
-| 6 | Ultima Venta | (ignorado) |
-| 7 | Última Compra | fecha para filtro de nuevos (< 5 años) |
-| 8 | Dias sin venta | (ignorado) |
-| 9 | Descripcion | descripcion_original (para nuevos) |
-| 10 | Precio Tres C/IVA | (ignorado) |
-| 11 | Precio Cinco C/IVA | (ignorado) |
-| 12 | Precio abierto 3 C/IVA | precio_publico (CON IVA) |
-| 13 | Precio abierto 5 C/IVA | precio_mayoreo (CON IVA) |
-| 14 | Variant Scr | imagen_url (para nuevos) |
-| 15 | Carrera | inventario Suc. Carrera |
-| 16 | Berriozabal | inventario Suc. Berriozabal |
-| 17 | CEDIS | inventario CEDIS |
-| 18 | 31 Juarez | inventario Suc. 31 Juarez |
-| 19 | FULL | inventario FULL |
-| 20 | E-commerce | inventario Suc. E-commerce |
-| 21 | Total Almacenes | inventario_total |
+| 1 | Descripcion | (ignorada — duplicado exacto de col 10) |
+| 2 | Grupo -> Nombre | grupo_producto (para nuevos) |
+| 3 | SKU | sku_real (número de parte comercial; vacío en ~81%) |
+| 4 | Codigo de Barras | (ignorado) |
+| 5 | Departamento -> Nombre | departamento (para nuevos) |
+| 6 | Marcas Prodcuto -> Nombre | marca (para nuevos) |
+| 7 | Ultima Venta | (ignorado) |
+| 8 | Última Compra | fecha para filtro de nuevos (< 5 años) |
+| 9 | Dias sin venta | (ignorado) |
+| 10 | Descripcion | descripcion_original (para nuevos) |
+| 11 | Precio Tres C/IVA | precio_publico (CON IVA) |
+| 12 | Precio Cinco C/IVA | precio_mayoreo (CON IVA) |
+| 13 | Precio abierto 3 C/IVA | (ignorado desde Jul 2026) |
+| 14 | Precio abierto 5 C/IVA | (ignorado desde Jul 2026) |
+| 15 | Variant Scr | imagen_url (para nuevos) |
+| 16 | Carrera | inventario Suc. Carrera |
+| 17 | Berriozabal | inventario Suc. Berriozabal |
+| 18 | CEDIS | inventario CEDIS |
+| 19 | 31 Juarez | inventario Suc. 31 Juarez |
+| 20 | FULL | inventario FULL |
+| 21 | E-commerce | inventario Suc. E-commerce |
+| 22 | Total almacenes | inventario_total |
 
 ### Proceso de Actualización
 
