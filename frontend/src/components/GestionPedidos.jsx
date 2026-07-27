@@ -25,10 +25,10 @@ const ESTADOS = {
     ayuda: 'Stripe confirmó el pago. Es una venta real.',
   },
   pendiente: {
-    label: 'Pendiente de pago',
+    label: 'Por atender',
     icono: Clock,
     clase: 'bg-amber-100 text-amber-700 border-amber-300',
-    ayuda: 'Armó el pedido pero Stripe todavía no confirma el pago. NO surtir aún.',
+    ayuda: 'El proveedor envió el pedido. Falta confirmarlo y cobrarlo.',
   },
   cancelado: {
     label: 'Cancelado',
@@ -179,6 +179,7 @@ export default function GestionPedidos({ abierto, onClose }) {
   const totalPagado = resumen.pagado?.monto || 0;
   const numPagados = resumen.pagado?.pedidos || 0;
   const numPendientes = resumen.pendiente?.pedidos || 0;
+  const montoPendiente = resumen.pendiente?.monto || 0;
 
   return (
     <div
@@ -228,8 +229,10 @@ export default function GestionPedidos({ abierto, onClose }) {
               </div>
             </div>
             <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-              <div className="text-xs text-amber-700 font-medium">Pendientes de pago</div>
-              <div className="text-lg font-semibold text-amber-800">{numPendientes}</div>
+              <div className="text-xs text-amber-700 font-medium">Por atender</div>
+              <div className="text-lg font-semibold text-amber-800">
+                {numPendientes} · {money(montoPendiente)}
+              </div>
             </div>
           </div>
 
@@ -256,8 +259,8 @@ export default function GestionPedidos({ abierto, onClose }) {
               className="px-3 py-2 border border-notion-border rounded-lg text-sm focus:outline-none focus:border-reluvsa-yellow bg-white"
             >
               <option value="">Todos los estados</option>
+              <option value="pendiente">Por atender</option>
               <option value="pagado">Pagado</option>
-              <option value="pendiente">Pendiente de pago</option>
               <option value="cancelado">Cancelado</option>
               <option value="fallido">Pago fallido</option>
             </select>

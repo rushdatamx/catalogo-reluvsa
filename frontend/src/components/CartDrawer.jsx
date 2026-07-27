@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { X, ShoppingCart, Trash2, Plus, Minus, Loader2, MapPin } from 'lucide-react';
+import { X, ShoppingCart, Trash2, Plus, Minus, Loader2, MapPin, Send, CheckCircle } from 'lucide-react';
 import { useCart } from '../context/CartContext';
-import { crearCheckout } from '../services/api';
+import { crearPedido } from '../services/api';
 import { cn } from '../lib/utils';
 
 // Sucursales de pickup (deben coincidir con SUCURSALES_PICKUP del backend).
@@ -11,12 +11,17 @@ const fmt = (n) =>
   `$${(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function CartDrawer() {
-  const { items, abierto, setAbierto, actualizarCantidad, quitar, subtotal, totalItems } = useCart();
+  const { items, abierto, setAbierto, actualizarCantidad, quitar, subtotal, totalItems, vaciar } = useCart();
   const [sucursal, setSucursal] = useState('');
   const [procesando, setProcesando] = useState(false);
   const [error, setError] = useState(null);
+  // Confirmación tras enviar el pedido: { order_id, total, num_productos, sucursal }
+  const [enviado, setEnviado] = useState(null);
 
-  const handlePagar = async () => {
+  // Envía el pedido SIN pago en línea: queda 'pendiente' y RELUVSA lo cotiza
+  // y cobra por fuera. Cuando el cobro en línea esté activo, aquí volverá a
+  // ofrecerse el pago con tarjeta (crearCheckout).
+  const handleEnviarPedido = async () => {
     setError(null);
     if (!sucursal) {
       setError('Selecciona una sucursal para recoger tu pedido.');
@@ -25,19 +30,23 @@ export default function CartDrawer() {
     setProcesando(true);
     try {
       const payload = items.map((i) => ({ sku: i.sku, cantidad: i.cantidad }));
-      const res = await crearCheckout(payload, sucursal);
-      // Redirigir a la página de pago hosted de Stripe.
-      window.location.href = res.data.checkout_url;
+      const res = await crearPedido(payload, sucursal);
+      setEnviado({ ...res.data, sucursal });
+      vaciar();
     } catch (err) {
-      const status = err.response?.status;
-      const detail = err.response?.data?.detail;
       setError(
-        status === 503
-          ? 'Los pagos aún no están configurados. Contacta al administrador.'
-          : detail || 'No se pudo iniciar el pago. Intenta de nuevo.'
+        err.response?.data?.detail || 'No se pudo enviar el pedido. Intenta de nuevo.'
       );
+    } finally {
       setProcesando(false);
     }
+  };
+
+  const cerrar = () => {
+    setAbierto(false);
+    setEnviado(null);
+    setSucursal('');
+    setError(null);
   };
 
   if (!abierto) return null;
@@ -45,7 +54,7 @@ export default function CartDrawer() {
   return (
     <div className="fixed inset-0 z-[60] flex justify-end">
       {/* Overlay */}
-      <div className="absolute inset-0 bg-black/50" onClick={() => setAbierto(false)} />
+      <div className="absolute inset-0 bg-black/50" onClick={cerrar} />
 
       {/* Panel */}
       <div className="relative bg-white w-full max-w-md h-full shadow-xl flex flex-col animate-in slide-in-from-right">
@@ -54,20 +63,57 @@ export default function CartDrawer() {
           <h2 className="flex items-center gap-2 text-lg font-semibold text-notion-text-primary">
             <ShoppingCart size={20} />
             Tu carrito
-            {totalItems > 0 && (
+            {totalItems > 0 && !enviado && (
               <span className="text-sm font-normal text-notion-text-secondary">
                 ({totalItems} {totalItems === 1 ? 'artículo' : 'artículos'})
               </span>
             )}
           </h2>
           <button
-            onClick={() => setAbierto(false)}
+            onClick={cerrar}
             className="p-2 hover:bg-notion-bg-subtle rounded-lg transition-colors"
           >
             <X size={20} />
           </button>
         </div>
 
+        {/* Confirmación de pedido enviado */}
+        {enviado ? (
+          <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center justify-center text-center">
+            <CheckCircle size={56} className="text-green-600 mb-4" />
+            <h3 className="text-xl font-semibold text-notion-text-primary mb-2">
+              ¡Pedido enviado!
+            </h3>
+            <p className="text-sm text-notion-text-secondary mb-4">
+              Tu pedido <strong>#{enviado.order_id}</strong> quedó registrado.
+              Un asesor de RELUVSA te contactará para confirmarlo y coordinar el pago.
+            </p>
+            <div className="w-full bg-notion-bg-subtle rounded-xl p-4 text-sm space-y-1">
+              <div className="flex justify-between">
+                <span className="text-notion-text-secondary">Productos</span>
+                <span className="font-medium">{enviado.num_productos}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-notion-text-secondary">Recoger en</span>
+                <span className="font-medium">{enviado.sucursal}</span>
+              </div>
+              <div className="flex justify-between pt-1 border-t border-notion-border mt-2">
+                <span className="font-medium">Total estimado</span>
+                <span className="font-bold text-reluvsa-red">{fmt(enviado.total)}</span>
+              </div>
+            </div>
+            <p className="text-xs text-notion-text-secondary mt-3">
+              Precios incluyen IVA. El total se confirma al procesar el pedido.
+            </p>
+            <button
+              onClick={cerrar}
+              className="mt-6 w-full py-3 rounded-lg font-semibold bg-reluvsa-yellow text-reluvsa-black hover:bg-yellow-400 transition-colors"
+            >
+              Seguir comprando
+            </button>
+          </div>
+        ) : (
+        <>
         {/* Items */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {items.length === 0 ? (
@@ -155,10 +201,14 @@ export default function CartDrawer() {
             </div>
             <p className="text-xs text-notion-text-secondary -mt-2">Precios incluyen IVA</p>
 
-            {error && <p className="text-sm text-danger">{error}</p>}
+            {error && (
+              <p className="text-sm text-danger bg-red-50 border border-red-200 rounded-lg p-2">
+                {error}
+              </p>
+            )}
 
             <button
-              onClick={handlePagar}
+              onClick={handleEnviarPedido}
               disabled={procesando}
               className={cn(
                 'w-full flex items-center justify-center gap-2 py-3 rounded-lg font-semibold transition-colors',
@@ -169,13 +219,22 @@ export default function CartDrawer() {
               {procesando ? (
                 <>
                   <Loader2 size={18} className="animate-spin" />
-                  Redirigiendo a pago...
+                  Enviando pedido...
                 </>
               ) : (
-                'Proceder al pago'
+                <>
+                  <Send size={18} />
+                  Enviar pedido
+                </>
               )}
             </button>
+            <p className="text-xs text-notion-text-secondary text-center">
+              No se cobra nada ahora. Un asesor te contactará para confirmar tu
+              pedido y coordinar el pago.
+            </p>
           </div>
+        )}
+        </>
         )}
       </div>
     </div>

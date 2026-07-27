@@ -67,6 +67,13 @@ class CheckoutResponse(BaseModel):
     order_id: int
 
 
+class PedidoResponse(BaseModel):
+    """Respuesta de un pedido sin pago en línea (solicitud de cotización)."""
+    order_id: int
+    total: float
+    num_productos: int
+
+
 # --- Helpers ----------------------------------------------------------------
 def _resolver_precio(row: sqlite3.Row) -> float:
     """Punto único de resolución de precio. Hoy: siempre precio_publico (con IVA).
@@ -114,14 +121,15 @@ def _get_or_create_stripe_customer(user: UserInfo) -> tuple[Optional[str], Optio
     return customer.id, empresa
 
 
-# --- Endpoints --------------------------------------------------------------
-@router.post("/checkout", response_model=CheckoutResponse)
-def crear_checkout(data: CheckoutRequest, user: UserInfo = Depends(get_current_user)):
-    """Crea una Checkout Session de Stripe tras revalidar precio e inventario."""
-    if not stripe.api_key:
-        raise HTTPException(status_code=503, detail="Pagos no configurados (falta STRIPE_SECRET_KEY)")
+def _validar_carrito(data: CheckoutRequest) -> tuple[list, list, float]:
+    """Revalida el carrito contra la BD y arma line_items (Stripe) + order_items.
 
-    # Validar tipo de entrega (por ahora solo pickup).
+    Devuelve (line_items, order_items_data, subtotal).
+
+    Reporta TODOS los productos con problema, no solo el primero: un carrito de
+    cientos de renglones abortando de uno en uno obligaría al proveedor a
+    reintentar decenas de veces para descubrir qué falla.
+    """
     if data.tipo_entrega != "pickup":
         raise HTTPException(status_code=400, detail="Solo se admite entrega tipo 'pickup' por ahora")
     if not data.sucursal_pickup or data.sucursal_pickup not in SUCURSALES_PICKUP:
@@ -132,14 +140,14 @@ def crear_checkout(data: CheckoutRequest, user: UserInfo = Depends(get_current_u
     for item in data.items:
         cantidades[item.sku] = cantidades.get(item.sku, 0) + item.cantidad
 
-    line_items = []
-    order_items_data = []
+    line_items: list = []
+    order_items_data: list = []
+    problemas: list[str] = []
     subtotal = 0.0
 
     with get_db() as conn:
         cursor = conn.cursor()
 
-        # Revalidar cada producto contra la BD.
         for sku, cantidad in cantidades.items():
             cursor.execute(
                 """SELECT id, sku, nombre_producto, tipo_producto, marca,
@@ -149,24 +157,22 @@ def crear_checkout(data: CheckoutRequest, user: UserInfo = Depends(get_current_u
             )
             prod = cursor.fetchone()
             if prod is None:
-                raise HTTPException(status_code=404, detail=f"Producto {sku} no encontrado")
+                problemas.append(f"{sku}: no encontrado")
+                continue
 
             precio = _resolver_precio(prod)
             inventario = prod["inventario_total"] or 0
 
             # Regla AGOTADO: no se puede comprar si precio 0 o sin stock.
             if precio <= 0:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"El producto {sku} no tiene precio de venta en línea (consultar precio)",
-                )
+                problemas.append(f"{sku}: sin precio en línea (consultar precio)")
+                continue
             if inventario <= 0:
-                raise HTTPException(status_code=400, detail=f"El producto {sku} está agotado")
+                problemas.append(f"{sku}: agotado")
+                continue
             if cantidad > inventario:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Solo hay {int(inventario)} unidades de {sku} (pediste {cantidad})",
-                )
+                problemas.append(f"{sku}: solo hay {int(inventario)} (pediste {cantidad})")
+                continue
 
             nombre = prod["nombre_producto"] or prod["tipo_producto"] or prod["sku"]
             subtotal += precio * cantidad
@@ -191,16 +197,27 @@ def crear_checkout(data: CheckoutRequest, user: UserInfo = Depends(get_current_u
                 "precio_unitario": precio,
             })
 
-    total = subtotal  # sin costo de envío por ahora (pickup)
+    if problemas:
+        MAX_LISTADOS = 10
+        listados = "; ".join(problemas[:MAX_LISTADOS])
+        extra = f" (y {len(problemas) - MAX_LISTADOS} más)" if len(problemas) > MAX_LISTADOS else ""
+        raise HTTPException(
+            status_code=400,
+            detail=f"{len(problemas)} producto(s) no se pueden pedir — {listados}{extra}",
+        )
 
-    # Crear la orden en la BD de PEDIDOS (separada del catálogo), estado 'pendiente'
-    # ANTES de Stripe, para tener order_id.
+    return line_items, order_items_data, subtotal
+
+
+def _crear_orden(user: UserInfo, data: CheckoutRequest, order_items_data: list,
+                 subtotal: float, total: float, estado: str) -> int:
+    """Inserta la orden y sus renglones en pedidos.db. Devuelve el order_id."""
     with get_pedidos_db() as pconn:
         pcursor = pconn.cursor()
         pcursor.execute(
             """INSERT INTO orders (username, tipo_entrega, sucursal_pickup, subtotal, total, estado)
-               VALUES (?, 'pickup', ?, ?, ?, 'pendiente')""",
-            (user.username, data.sucursal_pickup, subtotal, total),
+               VALUES (?, 'pickup', ?, ?, ?, ?)""",
+            (user.username, data.sucursal_pickup, subtotal, total, estado),
         )
         order_id = pcursor.lastrowid
         for it in order_items_data:
@@ -209,6 +226,40 @@ def crear_checkout(data: CheckoutRequest, user: UserInfo = Depends(get_current_u
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 (order_id, it["producto_id"], it["sku"], it["nombre"], it["cantidad"], it["precio_unitario"]),
             )
+    return order_id
+
+
+# --- Endpoints --------------------------------------------------------------
+@router.post("/pedido", response_model=PedidoResponse)
+def crear_pedido(data: CheckoutRequest, user: UserInfo = Depends(get_current_user)):
+    """Registra un pedido SIN pago en línea (el proveedor lo 'envía' y RELUVSA
+    lo cotiza/cobra por fuera). Queda en estado 'pendiente' y aparece de
+    inmediato en el portal de pedidos del admin.
+
+    No toca Stripe ni descuenta inventario: eso solo pasa cuando un pago se
+    confirma. Existe para poder recibir pedidos mientras el cobro en línea
+    todavía no está configurado."""
+    _, order_items_data, subtotal = _validar_carrito(data)
+    order_id = _crear_orden(user, data, order_items_data, subtotal, subtotal, "pendiente")
+    return PedidoResponse(
+        order_id=order_id,
+        total=subtotal,
+        num_productos=len(order_items_data),
+    )
+
+
+@router.post("/checkout", response_model=CheckoutResponse)
+def crear_checkout(data: CheckoutRequest, user: UserInfo = Depends(get_current_user)):
+    """Crea una Checkout Session de Stripe tras revalidar precio e inventario."""
+    if not stripe.api_key:
+        raise HTTPException(status_code=503, detail="Pagos no configurados (falta STRIPE_SECRET_KEY)")
+
+    line_items, order_items_data, subtotal = _validar_carrito(data)
+    total = subtotal  # sin costo de envío por ahora (pickup)
+
+    # Crear la orden en la BD de PEDIDOS (separada del catálogo), estado 'pendiente'
+    # ANTES de Stripe, para tener order_id.
+    order_id = _crear_orden(user, data, order_items_data, subtotal, total, "pendiente")
 
     # Referencia Stripe ↔ proveedor: Customer persistente + empresa en metadata.
     stripe_customer_id, nombre_empresa = _get_or_create_stripe_customer(user)

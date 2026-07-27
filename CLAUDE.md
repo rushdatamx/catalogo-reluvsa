@@ -789,6 +789,11 @@ POST /api/auth/usuarios                # { username, password, nombre_empresa, c
 PUT  /api/auth/usuarios/{username}     # parcial: { password?, nombre_empresa?, contacto?, activo? }
                                        # activo=false = soft delete (conserva historial de pedidos)
 
+# Pedidos:
+POST /api/pedido                           # pedido SIN pago en línea -> estado 'pendiente'
+                                           # Body igual que /checkout: { items, tipo_entrega, sucursal_pickup }
+                                           # NO toca Stripe ni descuenta inventario.
+
 # Órdenes:
 GET /api/orders?username=&estado=&limit=   # (admin) resumen de todas las órdenes:
                                            # empresa del proveedor + num_renglones/num_piezas.
@@ -806,9 +811,25 @@ al hacer clic en uno se cargan sus renglones **bajo demanda** (`GET /api/orders/
 SKU/producto/cantidad/precio/importe y botón **Descargar lista (CSV)** para surtir el pedido.
 Filtros por proveedor y estado; tarjetas de resumen (pagados con monto / pendientes).
 
-⚠️ **`estado` es lo que importa**: la orden se crea al *iniciar* el checkout, así que
-`pendiente` = armó el pedido pero Stripe **no** confirmó el pago (no surtir). Solo `pagado`
-es venta real (`paid_at` poblado por el webhook). Valores: `pendiente|pagado|cancelado|fallido`.
+Estados: `pendiente|pagado|cancelado|fallido`. Hoy (Julio 2026) el flujo activo es sin pago
+en línea, así que **`pendiente` = pedido real por atender**, no un carrito abandonado.
+`pagado` solo lo escribe el webhook de Stripe cuando el cobro se confirma.
+
+### Pedidos sin pago en línea (flujo activo, Julio 2026)
+Mientras Stripe siga en modo test / sin llaves live, el carrito **no** manda al pago: el
+botón dice **"Enviar pedido"** y llama `POST /api/pedido`, que registra la orden en estado
+`pendiente` y la muestra de inmediato en el portal del admin. RELUVSA la cotiza y cobra por
+fuera. No toca Stripe ni descuenta inventario (eso sigue siendo exclusivo de un pago
+confirmado). El proveedor ve una pantalla de confirmación con folio, # de productos,
+sucursal y total estimado.
+
+Para volver al cobro en línea: en `CartDrawer.jsx` cambiar `crearPedido` por `crearCheckout`
+(sigue existiendo y funcionando, igual que `POST /api/checkout` y el webhook).
+
+⚠️ `_validar_carrito()` en `pagos.py` es compartida por ambos endpoints y reporta **todos**
+los productos con problema (agotado / sin precio / sin stock suficiente), no solo el primero
+— con carritos de cientos de renglones, abortar en el primero obliga a reintentar decenas de
+veces. Muestra hasta 10 y resume el resto como "y N más".
 
 ### Referencia Stripe ↔ proveedor
 - Cada orden en `pedidos.db` guarda el `username` del comprador (índice `idx_orders_username`).

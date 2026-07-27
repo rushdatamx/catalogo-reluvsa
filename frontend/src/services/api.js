@@ -106,6 +106,9 @@ export const getStats = () => api.get('/stats');
 // items: [{ sku, cantidad }]
 export const crearCheckout = (items, sucursal_pickup) =>
   api.post('/checkout', { items, tipo_entrega: 'pickup', sucursal_pickup });
+// Pedido sin pago en línea: queda 'pendiente' y RELUVSA lo cotiza/cobra por fuera.
+export const crearPedido = (items, sucursal_pickup) =>
+  api.post('/pedido', { items, tipo_entrega: 'pickup', sucursal_pickup });
 export const getMisPedidos = () => api.get('/orders/mis-pedidos');
 export const getOrden = (orderId) => api.get(`/orders/${orderId}`);
 
