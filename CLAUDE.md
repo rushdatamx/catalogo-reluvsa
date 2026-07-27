@@ -789,9 +789,26 @@ POST /api/auth/usuarios                # { username, password, nombre_empresa, c
 PUT  /api/auth/usuarios/{username}     # parcial: { password?, nombre_empresa?, contacto?, activo? }
                                        # activo=false = soft delete (conserva historial de pedidos)
 
-# Órdenes (solo admin) — base del futuro módulo de pedidos:
-GET /api/orders?username=&estado=&limit=   # todas las órdenes con empresa del proveedor
+# Órdenes:
+GET /api/orders?username=&estado=&limit=   # (admin) resumen de todas las órdenes:
+                                           # empresa del proveedor + num_renglones/num_piezas.
+                                           # NO trae los items (un pedido puede tener cientos).
+                                           # Incluye "resumen": {estado: {pedidos, monto}} del filtro.
+GET /api/orders/{id}                       # detalle con items (admin ve cualquiera + contacto;
+                                           # el proveedor solo las suyas, sin contacto)
+GET /api/orders/mis-pedidos                # pedidos del usuario autenticado
 ```
+
+### Portal de pedidos (admin)
+`frontend/src/components/GestionPedidos.jsx` — modal con botón **"Pedidos"** (📋) en el header,
+visible solo para admin. Lista los pedidos con proveedor, estado, fecha, # de productos y monto;
+al hacer clic en uno se cargan sus renglones **bajo demanda** (`GET /api/orders/{id}`), con tabla
+SKU/producto/cantidad/precio/importe y botón **Descargar lista (CSV)** para surtir el pedido.
+Filtros por proveedor y estado; tarjetas de resumen (pagados con monto / pendientes).
+
+⚠️ **`estado` es lo que importa**: la orden se crea al *iniciar* el checkout, así que
+`pendiente` = armó el pedido pero Stripe **no** confirmó el pago (no surtir). Solo `pagado`
+es venta real (`paid_at` poblado por el webhook). Valores: `pendiente|pagado|cancelado|fallido`.
 
 ### Referencia Stripe ↔ proveedor
 - Cada orden en `pedidos.db` guarda el `username` del comprador (índice `idx_orders_username`).

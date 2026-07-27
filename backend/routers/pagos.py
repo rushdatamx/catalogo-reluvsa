@@ -362,10 +362,17 @@ def listar_ordenes(
 
     with get_pedidos_db() as conn:
         cursor = conn.cursor()
+        # Resumen por pedido (sin traer los items: un pedido puede tener cientos
+        # de renglones y la lista solo necesita el conteo). El detalle se pide
+        # por separado con GET /api/orders/{id}.
         cursor.execute(
             f"""SELECT o.id, o.username, u.nombre_empresa, o.stripe_session_id,
-                       o.tipo_entrega, o.sucursal_pickup, o.subtotal, o.total,
-                       o.estado, o.created_at, o.paid_at
+                       o.stripe_payment_intent, o.tipo_entrega, o.sucursal_pickup,
+                       o.subtotal, o.total, o.estado, o.created_at, o.paid_at,
+                       (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id)
+                           AS num_renglones,
+                       (SELECT COALESCE(SUM(oi.cantidad), 0) FROM order_items oi
+                            WHERE oi.order_id = o.id) AS num_piezas
                 FROM orders o
                 LEFT JOIN usuarios u ON u.username = o.username
                 {where_sql}
@@ -374,13 +381,16 @@ def listar_ordenes(
             (*params, max(1, min(limit, 500))),
         )
         pedidos = [dict(row) for row in cursor.fetchall()]
-        for p in pedidos:
-            cursor.execute(
-                "SELECT sku, nombre, cantidad, precio_unitario FROM order_items WHERE order_id = ?",
-                (p["id"],),
-            )
-            p["items"] = [dict(r) for r in cursor.fetchall()]
-    return {"pedidos": pedidos}
+
+        # Totales globales del filtro aplicado (para el encabezado del portal).
+        cursor.execute(
+            f"""SELECT o.estado, COUNT(*) AS n, COALESCE(SUM(o.total), 0) AS monto
+                FROM orders o {where_sql} GROUP BY o.estado""",
+            tuple(params),
+        )
+        resumen = {r["estado"]: {"pedidos": r["n"], "monto": r["monto"]} for r in cursor.fetchall()}
+
+    return {"pedidos": pedidos, "resumen": resumen}
 
 
 @router.get("/orders/mis-pedidos")
@@ -411,9 +421,13 @@ def obtener_orden(order_id: int, user: UserInfo = Depends(get_current_user)):
     with get_pedidos_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            """SELECT id, username, stripe_session_id, tipo_entrega, sucursal_pickup,
-                      subtotal, total, estado, created_at, paid_at
-               FROM orders WHERE id = ?""",
+            """SELECT o.id, o.username, u.nombre_empresa, u.contacto,
+                      o.stripe_session_id, o.stripe_payment_intent, o.tipo_entrega,
+                      o.sucursal_pickup, o.subtotal, o.total, o.estado,
+                      o.created_at, o.paid_at
+               FROM orders o
+               LEFT JOIN usuarios u ON u.username = o.username
+               WHERE o.id = ?""",
             (order_id,),
         )
         order = cursor.fetchone()
@@ -423,8 +437,14 @@ def obtener_orden(order_id: int, user: UserInfo = Depends(get_current_user)):
             raise HTTPException(status_code=403, detail="No autorizado")
 
         result = dict(order)
+        # Datos de contacto solo para el admin (el proveedor ya los conoce y no
+        # tiene por qué recibirlos de vuelta en su propio detalle).
+        if user.role != "admin":
+            result.pop("contacto", None)
         cursor.execute(
-            "SELECT sku, nombre, cantidad, precio_unitario FROM order_items WHERE order_id = ?",
+            """SELECT sku, nombre, cantidad, precio_unitario,
+                      (cantidad * precio_unitario) AS importe
+               FROM order_items WHERE order_id = ? ORDER BY id""",
             (order_id,),
         )
         result["items"] = [dict(r) for r in cursor.fetchall()]

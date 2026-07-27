@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, Package, Car, Link2, Filter, X, ChevronDown, CheckCircle, XCircle, AlertCircle, Tag, Calendar, Gauge, Truck, Settings, Save, LogOut, User, ImageOff, FileSpreadsheet, FileText, Download, Loader2, ShoppingCart, Plus, Users } from 'lucide-react';
+import { Search, Package, Car, Link2, Filter, X, ChevronDown, CheckCircle, XCircle, AlertCircle, Tag, Calendar, Gauge, Truck, Settings, Save, LogOut, User, ImageOff, FileSpreadsheet, FileText, Download, Loader2, ShoppingCart, Plus, Users, ClipboardList } from 'lucide-react';
 import { getProductos, getStats, getProducto, actualizarEspecificacionesManuales, exportarExcel, exportarPDF, API_BASE } from './services/api';
 import { cn } from './lib/utils';
 
@@ -15,6 +15,7 @@ import BarraCategorias from './components/BarraCategorias';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './components/Login';
 import GestionUsuarios from './components/GestionUsuarios';
+import GestionPedidos from './components/GestionPedidos';
 
 // Carrito / Compra
 import { CartProvider, useCart, puedeComprar } from './context/CartContext';
@@ -63,6 +64,7 @@ function AppContent() {
   const [stats, setStats] = useState(null);
   const [exportando, setExportando] = useState(null); // null | 'excel' | 'pdf'
   const [mostrarUsuarios, setMostrarUsuarios] = useState(false); // modal gestión de usuarios (admin)
+  const [mostrarPedidos, setMostrarPedidos] = useState(false);   // modal portal de pedidos (admin)
 
   // Estados para especificaciones manuales
   const [especsManuales, setEspecsManuales] = useState({
@@ -353,6 +355,18 @@ function AppContent() {
                   </span>
                 )}
               </button>
+              {/* Pedidos (solo admin) */}
+              {isAdmin() && (
+                <button
+                  onClick={() => setMostrarPedidos(true)}
+                  className="flex items-center gap-1.5 bg-black/10 hover:bg-black/20 px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
+                  aria-label="Ver pedidos"
+                  title="Pedidos de proveedores"
+                >
+                  <ClipboardList size={16} />
+                  <span className="hidden sm:inline">Pedidos</span>
+                </button>
+              )}
               {/* Gestión de usuarios (solo admin) */}
               {isAdmin() && (
                 <button
@@ -916,6 +930,7 @@ function AppContent() {
 
       {/* Modal de gestión de usuarios (solo admin) */}
       <GestionUsuarios abierto={mostrarUsuarios} onClose={() => setMostrarUsuarios(false)} />
+      <GestionPedidos abierto={mostrarPedidos} onClose={() => setMostrarPedidos(false)} />
     </div>
   );
 }
