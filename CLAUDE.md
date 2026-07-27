@@ -58,8 +58,9 @@ catalogo-reluvsa/
 │   │   │   ├── BarraCategorias.jsx   # Barra de categorías estilo Amazon
 │   │   │   ├── TopVendidos.jsx       # Vitrina "Los más vendidos"
 │   │   │   ├── ProductImage.jsx      # Imagen con fallback + skeleton
-│   │   │   ├── CartDrawer.jsx        # Drawer del carrito
+│   │   │   ├── CartDrawer.jsx        # Drawer del carrito ("Enviar pedido", sin pago en línea)
 │   │   │   ├── GestionUsuarios.jsx   # Modal admin: usuarios de proveedores
+│   │   │   ├── GestionPedidos.jsx    # Modal admin: portal de pedidos (detalle + CSV)
 │   │   │   ├── Login.jsx / OrderResult.jsx  # Login y resultado de pago
 │   │   │   └── DetalleProducto.jsx   # (No usado - modal está en App.jsx)
 │   │   ├── context/        # AuthContext (useAuth) y CartContext (useCart)
@@ -313,6 +314,7 @@ Componentes principales (`frontend/src/`):
 - `components/ProductImage.jsx` — imagen con fallback + skeleton (reutilizable).
 - `components/FiltrosCascada.jsx` — sidebar de filtros en cascada.
 - `components/CartDrawer.jsx` / `Login.jsx` / `OrderResult.jsx` — carrito, login, resultado de pago.
+- `components/GestionPedidos.jsx` — portal de pedidos del admin (botón 📋 en header).
 - `context/AuthContext.jsx` (`useAuth`) y `context/CartContext.jsx` (`useCart`, `puedeComprar`).
 - `lib/categorias.js` — nombres amigables de departamentos (compartido barra/vitrina).
 - `services/api.js` — **todas** las llamadas API.
@@ -899,10 +901,17 @@ Se activan por MARCA (CHECKER, EXTREMA, CAMEL), no por departamento.
 ## Próximos Pasos Sugeridos
 
 1. ~~**Imágenes**: Implementar carga/display de imágenes de productos~~ ✅ Implementado (proxy HTTPS)
-2. **Carrito**: Agregar funcionalidad de cotización/carrito
+2. ~~**Carrito**: Agregar funcionalidad de cotización/carrito~~ ✅ Implementado (carrito + "Enviar pedido")
 3. ~~**Exportación**: PDF/Excel de búsquedas~~ ✅ Implementado (Excel + PDF con imágenes embebidas)
-4. ~~**Usuarios**: Sistema de login para empleados~~ ✅ Implementado (JWT básico)
-5. **Analytics**: Tracking de búsquedas más comunes
-6. **Búsqueda avanzada**: Autocompletado, sugerencias
-7. **Mejora de imágenes**: Solicitar a RELUVSA actualizar imágenes faltantes (~81%)
-8. **Tags de producto**: Categorización adicional por tags (pendiente recibir Excel del cliente)
+4. ~~**Usuarios**: Sistema de login para empleados~~ ✅ Implementado (JWT + usuarios de proveedores)
+5. ~~**Módulo de pedidos**: UI de admin sobre las órdenes~~ ✅ Implementado (portal 📋 + CSV)
+6. **Stripe a producción**: pasar de llaves test a live y reactivar el cobro en línea
+   (cambiar `crearPedido` → `crearCheckout` en `CartDrawer.jsx`). ⚠️ Bloqueante para cobrar.
+7. **Estados de pedido editables**: que el admin marque un pedido como surtido/cancelado
+   desde el portal (hoy `estado` solo lo mueve el webhook de Stripe).
+8. **Notificación de pedido nuevo**: avisar al admin (correo/WhatsApp) cuando entra un pedido;
+   hoy hay que abrir el portal para enterarse.
+9. **Analytics**: Tracking de búsquedas más comunes
+10. **Búsqueda avanzada**: Autocompletado, sugerencias
+11. **Mejora de imágenes**: Solicitar a RELUVSA actualizar imágenes faltantes (~81%)
+12. **Tags de producto**: Categorización adicional por tags (pendiente recibir Excel del cliente)
