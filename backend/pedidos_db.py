@@ -107,6 +107,18 @@ def init_pedidos_db():
                 last_login TIMESTAMP
             )
         """)
+        # Carrito ANTES de enviarse como pedido. Vive en el servidor (no solo en el
+        # localStorage del navegador) para que el proveedor lo recupere desde
+        # cualquier dispositivo y para que el admin pueda ver carritos armados que
+        # nunca se enviaron. Un carrito por usuario (se sobrescribe al guardar).
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS carritos (
+                username TEXT PRIMARY KEY,
+                items TEXT NOT NULL DEFAULT '[]',   -- JSON: [{sku, cantidad}]
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_orders_username ON orders(username)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_orders_session ON orders(stripe_session_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_carritos_updated ON carritos(updated_at)")

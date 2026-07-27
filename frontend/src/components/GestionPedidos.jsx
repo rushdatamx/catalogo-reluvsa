@@ -2,19 +2,22 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   ClipboardList, X, Loader2, RefreshCw, ChevronDown, ChevronRight,
   CheckCircle, Clock, XCircle, AlertTriangle, Store, FileSpreadsheet, Search,
+  ShoppingCart,
 } from 'lucide-react';
-import { getOrdenes, getOrden, getUsuarios } from '../services/api';
+import { getOrdenes, getOrden, getUsuarios, getCarritos } from '../services/api';
 import { cn } from '../lib/utils';
 
 /**
- * Portal de pedidos para el admin (solo admin).
- * Lista todas las órdenes con su proveedor, estado y monto; al expandir un
- * pedido se cargan sus renglones (la lista NO los trae para no arrastrar
- * cientos de items por pedido).
+ * Portal de pedidos para el admin (solo admin). Dos pestañas:
  *
- * Ojo con el estado: la orden se crea al iniciar el checkout, así que
- * 'pendiente' significa que armó el carrito pero Stripe no confirmó el pago.
- * Solo 'pagado' es una venta real.
+ *  - PEDIDOS: órdenes ya enviadas. Al expandir una se cargan sus renglones
+ *    (la lista NO los trae para no arrastrar cientos de items por pedido).
+ *    'pendiente' = el proveedor lo envió y falta atenderlo; 'pagado' = Stripe
+ *    confirmó el cobro.
+ *
+ *  - CARRITOS ACTIVOS: carritos armados que TODAVÍA NO se envían. Es la red de
+ *    seguridad: antes vivían solo en el navegador del proveedor y si se perdían
+ *    no quedaba rastro. Ahora RELUVSA los ve y puede levantarlos por teléfono.
  */
 
 const ESTADOS = {
@@ -59,6 +62,18 @@ const fechaLegible = (s) => {
   });
 };
 
+/** Descarga filas como CSV. BOM para que Excel respete los acentos. */
+const descargarFilasCSV = (filas, nombreArchivo) => {
+  const escapar = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const csv = '﻿' + filas.map((f) => f.map(escapar).join(',')).join('\r\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nombreArchivo;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
 function EstadoBadge({ estado }) {
   const cfg = ESTADOS[estado] || {
     label: estado || 'Desconocido',
@@ -82,10 +97,16 @@ function EstadoBadge({ estado }) {
 }
 
 export default function GestionPedidos({ abierto, onClose }) {
+  const [tab, setTab] = useState('pedidos'); // 'pedidos' | 'carritos'
   const [pedidos, setPedidos] = useState([]);
   const [resumen, setResumen] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Carritos activos (armados pero sin enviar)
+  const [carritos, setCarritos] = useState([]);
+  const [loadingCarritos, setLoadingCarritos] = useState(false);
+  const [carritoAbierto, setCarritoAbierto] = useState(null);
 
   // Filtros
   const [filtroUsuario, setFiltroUsuario] = useState('');
@@ -113,9 +134,27 @@ export default function GestionPedidos({ abierto, onClose }) {
     }
   }, [filtroUsuario, filtroEstado]);
 
+  const cargarCarritos = useCallback(async () => {
+    setLoadingCarritos(true);
+    try {
+      const res = await getCarritos();
+      setCarritos(res.data.carritos || []);
+    } catch {
+      setCarritos([]);
+    } finally {
+      setLoadingCarritos(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (abierto) cargarPedidos();
   }, [abierto, cargarPedidos]);
+
+  // Los carritos se cargan al abrir (no solo al entrar a la pestaña) para poder
+  // mostrar el contador en el tab desde el principio.
+  useEffect(() => {
+    if (abierto) cargarCarritos();
+  }, [abierto, cargarCarritos]);
 
   // Lista de proveedores para el selector (una sola vez al abrir).
   useEffect(() => {
@@ -153,25 +192,38 @@ export default function GestionPedidos({ abierto, onClose }) {
 
   // Descarga el detalle como CSV (se abre en Excel) para surtir el pedido.
   const descargarCSV = (pedido, items) => {
-    const filas = [
-      ['SKU', 'Producto', 'Cantidad', 'Precio unitario', 'Importe'],
-      ...items.map((i) => [
-        i.sku,
-        i.nombre || '',
-        i.cantidad,
-        i.precio_unitario,
-        (i.importe ?? i.cantidad * i.precio_unitario),
-      ]),
-    ];
-    const escapar = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    // BOM para que Excel respete los acentos.
-    const csv = '﻿' + filas.map((f) => f.map(escapar).join(',')).join('\r\n');
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `pedido-${pedido.id}-${pedido.username}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    descargarFilasCSV(
+      [
+        ['SKU', 'Producto', 'Cantidad', 'Precio unitario', 'Importe'],
+        ...items.map((i) => [
+          i.sku,
+          i.nombre || '',
+          i.cantidad,
+          i.precio_unitario,
+          i.importe ?? i.cantidad * i.precio_unitario,
+        ]),
+      ],
+      `pedido-${pedido.id}-${pedido.username}.csv`
+    );
+  };
+
+  // Un carrito sin enviar también se puede bajar: sirve para cotizarlo por
+  // teléfono sin esperar a que el proveedor le dé "Enviar pedido".
+  const descargarCarritoCSV = (c) => {
+    descargarFilasCSV(
+      [
+        ['SKU', 'Producto', 'Marca', 'Cantidad', 'Precio unitario', 'Importe'],
+        ...c.items.map((i) => [
+          i.sku,
+          i.nombre || '',
+          i.marca || '',
+          i.cantidad,
+          i.precio,
+          i.precio * i.cantidad,
+        ]),
+      ],
+      `carrito-${c.username}.csv`
+    );
   };
 
   if (!abierto) return null;
@@ -207,12 +259,12 @@ export default function GestionPedidos({ abierto, onClose }) {
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={cargarPedidos}
-                disabled={loading}
+                onClick={() => { cargarPedidos(); cargarCarritos(); }}
+                disabled={loading || loadingCarritos}
                 className="p-2 hover:bg-notion-bg-subtle rounded-lg transition-colors disabled:opacity-50"
                 title="Actualizar"
               >
-                <RefreshCw size={18} className={cn(loading && 'animate-spin')} />
+                <RefreshCw size={18} className={cn((loading || loadingCarritos) && 'animate-spin')} />
               </button>
               <button onClick={onClose} className="p-2 hover:bg-notion-bg-subtle rounded-lg transition-colors">
                 <X size={20} />
@@ -220,7 +272,34 @@ export default function GestionPedidos({ abierto, onClose }) {
             </div>
           </div>
 
+          {/* Pestañas */}
+          <div className="flex gap-1 mt-4 border-b border-notion-border -mb-px">
+            {[
+              { id: 'pedidos', label: 'Pedidos enviados', n: pedidos.length },
+              { id: 'carritos', label: 'Carritos sin enviar', n: carritos.length },
+            ].map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={cn(
+                  'px-4 py-2 text-sm font-medium border-b-2 transition-colors',
+                  tab === t.id
+                    ? 'border-reluvsa-yellow text-notion-text-primary'
+                    : 'border-transparent text-notion-text-secondary hover:text-notion-text-primary'
+                )}
+              >
+                {t.label}
+                {t.n > 0 && (
+                  <span className="ml-1.5 text-xs bg-notion-bg-subtle px-1.5 py-0.5 rounded-full">
+                    {t.n}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
           {/* Resumen */}
+          {tab === 'pedidos' && (
           <div className="flex flex-wrap gap-3 mt-4">
             <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2">
               <div className="text-xs text-green-700 font-medium">Pagados</div>
@@ -235,8 +314,10 @@ export default function GestionPedidos({ abierto, onClose }) {
               </div>
             </div>
           </div>
+          )}
 
           {/* Filtros */}
+          {tab === 'pedidos' && (
           <div className="flex flex-wrap gap-2 mt-4">
             <div className="relative">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-notion-text-secondary" />
@@ -265,8 +346,18 @@ export default function GestionPedidos({ abierto, onClose }) {
               <option value="fallido">Pago fallido</option>
             </select>
           </div>
+          )}
         </div>
 
+        {tab === 'carritos' ? (
+          <CarritosActivos
+            carritos={carritos}
+            loading={loadingCarritos}
+            abiertoId={carritoAbierto}
+            onToggle={(u) => setCarritoAbierto((prev) => (prev === u ? null : u))}
+            onDescargar={descargarCarritoCSV}
+          />
+        ) : (
         <div className="p-6 space-y-3">
           {error && (
             <div className="p-3 bg-red-50 border border-red-300 rounded-lg text-red-600 text-sm font-medium">
@@ -416,7 +507,148 @@ export default function GestionPedidos({ abierto, onClose }) {
             })
           )}
         </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Pestaña de carritos ACTIVOS: armados por el proveedor pero todavía no
+ * enviados como pedido.
+ *
+ * Antes esto era invisible — el carrito vivía solo en el navegador del cliente
+ * y si lo perdía no había forma de recuperarlo. Ahora RELUVSA lo ve en cuanto
+ * el proveedor agrega el primer producto y puede levantarlo por teléfono.
+ */
+function CarritosActivos({ carritos, loading, abiertoId, onToggle, onDescargar }) {
+  if (loading) {
+    return (
+      <div className="p-8 text-center">
+        <div className="w-8 h-8 border-2 border-reluvsa-yellow border-t-transparent rounded-full animate-spin mx-auto"></div>
+        <p className="mt-4 text-notion-text-secondary text-sm">Cargando carritos...</p>
+      </div>
+    );
+  }
+
+  if (carritos.length === 0) {
+    return (
+      <div className="p-8 text-center text-notion-text-secondary text-sm">
+        <ShoppingCart size={32} className="mx-auto mb-3 opacity-30" />
+        <p>Ningún proveedor tiene un carrito armado en este momento.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 space-y-3">
+      <div className="flex gap-2 text-sm bg-blue-50 border border-blue-200 rounded-lg p-3 text-blue-900">
+        <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+        <p>
+          Estos carritos <strong>todavía no son pedidos</strong>: el proveedor los
+          está armando y aún no le da a "Enviar pedido". Si ves uno grande que
+          lleva días parado, vale la pena hablarle.
+        </p>
+      </div>
+
+      {carritos.map((c) => {
+        const abierto = abiertoId === c.username;
+        return (
+          <div key={c.username} className="border border-notion-border rounded-xl overflow-hidden">
+            <button
+              onClick={() => onToggle(c.username)}
+              className="w-full text-left p-4 hover:bg-notion-bg-subtle transition-colors"
+              aria-expanded={abierto}
+            >
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div className="flex items-start gap-2 min-w-0">
+                  {abierto
+                    ? <ChevronDown size={18} className="mt-0.5 flex-shrink-0" />
+                    : <ChevronRight size={18} className="mt-0.5 flex-shrink-0" />}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-notion-text-primary">
+                        {c.nombre_empresa || c.username}
+                      </span>
+                      <code className="text-xs bg-notion-bg-subtle px-2 py-0.5 rounded font-mono">
+                        {c.username}
+                      </code>
+                      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium border bg-blue-100 text-blue-700 border-blue-300">
+                        <ShoppingCart size={12} />
+                        Sin enviar
+                      </span>
+                    </div>
+                    <div className="text-xs text-notion-text-secondary mt-1 flex items-center gap-3 flex-wrap">
+                      <span>Última actividad: {fechaLegible(c.updated_at)}</span>
+                      <span className="font-medium text-notion-text-primary">
+                        {c.num_renglones} producto{c.num_renglones === 1 ? '' : 's'}
+                        {c.num_piezas !== c.num_renglones && ` · ${c.num_piezas} pzas`}
+                      </span>
+                      {c.contacto && <span>Contacto: {c.contacto}</span>}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <div className="text-lg font-semibold text-notion-text-primary">
+                    {money(c.total_estimado)}
+                  </div>
+                  <div className="text-xs text-notion-text-secondary">estimado, IVA incl.</div>
+                </div>
+              </div>
+            </button>
+
+            {abierto && (
+              <div className="border-t border-notion-border bg-notion-bg-subtle p-4">
+                <div className="flex justify-end mb-3">
+                  <button
+                    onClick={() => onDescargar(c)}
+                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-notion-border bg-white hover:bg-notion-bg-subtle font-medium transition-colors"
+                  >
+                    <FileSpreadsheet size={14} />
+                    Descargar lista (CSV)
+                  </button>
+                </div>
+                <div className="overflow-x-auto bg-white rounded-lg border border-notion-border">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-notion-border text-left text-xs text-notion-text-secondary">
+                        <th className="p-2 font-medium">SKU</th>
+                        <th className="p-2 font-medium">Producto</th>
+                        <th className="p-2 font-medium text-right">Cant.</th>
+                        <th className="p-2 font-medium text-right">P. unit.</th>
+                        <th className="p-2 font-medium text-right">Importe</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {c.items.map((i, idx) => (
+                        <tr key={idx} className="border-b border-notion-border last:border-0">
+                          <td className="p-2 font-mono text-xs">{i.sku}</td>
+                          <td className="p-2">{i.nombre || '—'}</td>
+                          <td className="p-2 text-right font-medium">{i.cantidad}</td>
+                          <td className="p-2 text-right">{money(i.precio)}</td>
+                          <td className="p-2 text-right font-medium">
+                            {money(i.precio * i.cantidad)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-notion-bg-subtle font-semibold">
+                        <td className="p-2" colSpan={2}>
+                          Total ({c.num_renglones} producto{c.num_renglones === 1 ? '' : 's'})
+                        </td>
+                        <td className="p-2 text-right">{c.num_piezas}</td>
+                        <td className="p-2"></td>
+                        <td className="p-2 text-right">{money(c.total_estimado)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

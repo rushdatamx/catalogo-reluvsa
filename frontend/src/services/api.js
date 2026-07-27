@@ -121,4 +121,24 @@ export const actualizarUsuario = (username, datos) =>
 // Todas las órdenes (solo admin) — params: { username, estado, limit }
 export const getOrdenes = (params) => api.get('/orders', { params });
 
+// --- Carrito persistido en el servidor -------------------------------------
+// El carrito ya no vive solo en localStorage: se guarda en pedidos.db para que
+// sobreviva a limpiar el navegador / cambiar de dispositivo, y para que el admin
+// pueda rescatar carritos que nunca se enviaron.
+export const getCarrito = () => api.get('/carrito');
+export const guardarCarrito = (items) => api.put('/carrito', { items });
+export const vaciarCarritoServidor = () => api.delete('/carrito');
+// Importación masiva desde Excel/CSV (SKU + cantidad). NO guarda: devuelve el
+// resultado para que el usuario lo confirme. Timeout amplio por archivos grandes.
+export const importarCarrito = (file) => {
+  const form = new FormData();
+  form.append('archivo', file);
+  return api.post('/carrito/importar', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 60000,
+  });
+};
+// Carritos activos sin enviar (solo admin)
+export const getCarritos = () => api.get('/carritos');
+
 export default api;

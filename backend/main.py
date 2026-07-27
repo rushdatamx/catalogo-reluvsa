@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import filtros, productos, auth, images, exportar, pagos
+from routers import filtros, productos, auth, images, exportar, pagos, carrito
 from database import DATABASE_PATH
 from utils.busqueda_inteligente import cargar_vocabulario_vehiculos
 
@@ -37,7 +37,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
 
@@ -48,6 +48,7 @@ app.include_router(productos.router)
 app.include_router(images.router)
 app.include_router(exportar.router)
 app.include_router(pagos.router)
+app.include_router(carrito.router)
 
 
 @app.get("/")

@@ -26,6 +26,7 @@ catalogo-reluvsa/
 │   │   ├── filtros.py      # Endpoints de filtros en cascada
 │   │   ├── exportar.py     # Exportar Excel/PDF con imágenes
 │   │   ├── auth.py         # Autenticación JWT (login, roles)
+│   │   ├── carrito.py      # Carrito persistido en servidor + importar Excel/CSV
 │   │   └── images.py       # Proxy de imágenes (HTTPS→HTTP)
 │   ├── parsers/            # 82 parsers de marcas
 │   │   ├── __init__.py     # Mapeo marca → parser
@@ -60,10 +61,11 @@ catalogo-reluvsa/
 │   │   │   ├── ProductImage.jsx      # Imagen con fallback + skeleton
 │   │   │   ├── CartDrawer.jsx        # Drawer del carrito ("Enviar pedido", sin pago en línea)
 │   │   │   ├── GestionUsuarios.jsx   # Modal admin: usuarios de proveedores
-│   │   │   ├── GestionPedidos.jsx    # Modal admin: portal de pedidos (detalle + CSV)
+│   │   │   ├── GestionPedidos.jsx    # Modal admin: pedidos + carritos sin enviar (detalle + CSV)
+│   │   │   ├── ImportarPedido.jsx    # Modal: armar carrito desde Excel/CSV (SKU + cantidad)
 │   │   │   ├── Login.jsx / OrderResult.jsx  # Login y resultado de pago
 │   │   │   └── DetalleProducto.jsx   # (No usado - modal está en App.jsx)
-│   │   ├── context/        # AuthContext (useAuth) y CartContext (useCart)
+│   │   ├── context/        # AuthContext (useAuth) y CartContext (useCart, sync servidor)
 │   │   ├── services/
 │   │   │   └── api.js      # Servicios API con axios
 │   │   └── styles.css      # Estilos CSS + Tailwind
@@ -314,8 +316,10 @@ Componentes principales (`frontend/src/`):
 - `components/ProductImage.jsx` — imagen con fallback + skeleton (reutilizable).
 - `components/FiltrosCascada.jsx` — sidebar de filtros en cascada.
 - `components/CartDrawer.jsx` / `Login.jsx` / `OrderResult.jsx` — carrito, login, resultado de pago.
-- `components/GestionPedidos.jsx` — portal de pedidos del admin (botón 📋 en header).
-- `context/AuthContext.jsx` (`useAuth`) y `context/CartContext.jsx` (`useCart`, `puedeComprar`).
+- `components/GestionPedidos.jsx` — portal del admin (botón 📋): pedidos + carritos sin enviar.
+- `components/ImportarPedido.jsx` — importar carrito desde Excel/CSV (botón dentro del carrito).
+- `context/AuthContext.jsx` (`useAuth`) y `context/CartContext.jsx` (`useCart`, `puedeComprar`,
+  `agregarVarios`; sincroniza el carrito con el servidor — ver "Carrito persistido").
 - `lib/categorias.js` — nombres amigables de departamentos (compartido barra/vitrina).
 - `services/api.js` — **todas** las llamadas API.
 
@@ -796,6 +800,16 @@ POST /api/pedido                           # pedido SIN pago en línea -> estado
                                            # Body igual que /checkout: { items, tipo_entrega, sucursal_pickup }
                                            # NO toca Stripe ni descuenta inventario.
 
+# Carrito persistido en servidor (ver sección "Carrito persistido en el servidor"):
+GET    /api/carrito              # carrito guardado, hidratado con precio/inventario ACTUALES
+                                 # -> { items, updated_at, removidos } (removidos = SKUs que ya no existen)
+PUT    /api/carrito              # guarda/sobrescribe el carrito: { items: [{sku, cantidad}] }
+DELETE /api/carrito              # vacía el carrito (se llama al enviar el pedido)
+POST   /api/carrito/importar     # multipart 'archivo' (.xlsx/.csv) -> valida contra el catálogo.
+                                 # NO guarda: devuelve { items, encontrados, no_encontrados,
+                                 # sin_stock, ajustados, filas_ignoradas } para que el usuario confirme.
+GET    /api/carritos             # (admin) carritos ACTIVOS sin enviar, con items y total estimado
+
 # Órdenes:
 GET /api/orders?username=&estado=&limit=   # (admin) resumen de todas las órdenes:
                                            # empresa del proveedor + num_renglones/num_piezas.
@@ -812,6 +826,11 @@ visible solo para admin. Lista los pedidos con proveedor, estado, fecha, # de pr
 al hacer clic en uno se cargan sus renglones **bajo demanda** (`GET /api/orders/{id}`), con tabla
 SKU/producto/cantidad/precio/importe y botón **Descargar lista (CSV)** para surtir el pedido.
 Filtros por proveedor y estado; tarjetas de resumen (pagados con monto / pendientes).
+
+Tiene **dos pestañas**:
+- **Pedidos enviados** — las órdenes (lo descrito arriba).
+- **Carritos sin enviar** — carritos ACTIVOS que el proveedor todavía no manda
+  (`GET /api/carritos`), con sus items, total estimado y CSV. Ver sección siguiente.
 
 Estados: `pendiente|pagado|cancelado|fallido`. Hoy (Julio 2026) el flujo activo es sin pago
 en línea, así que **`pendiente` = pedido real por atender**, no un carrito abandonado.
@@ -832,6 +851,55 @@ Para volver al cobro en línea: en `CartDrawer.jsx` cambiar `crearPedido` por `c
 los productos con problema (agotado / sin precio / sin stock suficiente), no solo el primero
 — con carritos de cientos de renglones, abortar en el primero obliga a reintentar decenas de
 veces. Muestra hasta 10 y resume el resto como "y N más".
+
+### Carrito persistido en el servidor (Julio 2026)
+
+**Por qué existe.** El carrito vivía SOLO en `localStorage` del navegador. Un proveedor
+(Refaccionaria Albarrán) armó 141 productos, no alcanzó a darle "Enviar pedido" y el carrito
+se perdió: nunca llegó al servidor, así que **no había nada que recuperar** — ni en la BD, ni
+en logs de Railway, ni en ningún lado. Ese trabajo se perdió de forma irreversible.
+
+**Cómo funciona ahora** (`backend/routers/carrito.py` + `frontend/src/context/CartContext.jsx`):
+- Tabla `carritos` en **`pedidos.db`** (volumen persistente, NO en catalogo.db):
+  `username PRIMARY KEY, items TEXT (JSON), updated_at`. Un carrito por usuario.
+- Se guardan **solo `{sku, cantidad}`**. Nombre, precio e inventario se **rehidratan del
+  catálogo al leer**, porque cambian con cada actualización mensual — un carrito viejo nunca
+  sirve precios rancios. Si un SKU guardado ya no existe, se reporta en `removidos`.
+- El frontend guarda con **debounce de 800 ms** (no una petición por cada clic en +/-).
+  `localStorage` sigue existiendo como caché para pintar al instante y como respaldo si el
+  backend está caído, pero **la fuente de verdad es el servidor**.
+- ⚠️ Guardas importantes en `CartContext`: el flag `listoParaGuardar` evita que el primer
+  render dispare un PUT con `[]` que borre el carrito bueno; y si el servidor responde vacío
+  pero hay carrito local, **gana el local** (caso: carrito armado antes de esta feature).
+- Al enviar el pedido, `vaciar()` limpia local Y servidor (`DELETE /api/carrito`): el carrito
+  ya se volvió orden y no debe seguir apareciendo como "activo".
+
+**Vista de admin** (`GET /api/carritos`, pestaña "Carritos sin enviar"): muestra los carritos
+armados pero no enviados, con items, total estimado, contacto del proveedor y CSV. Es la red
+de seguridad — si un proveedor se atora con un pedido grande, RELUVSA lo ve y puede levantarlo
+por teléfono en vez de perderlo.
+
+### Importar pedido desde Excel/CSV (Julio 2026)
+
+`POST /api/carrito/importar` + `frontend/src/components/ImportarPedido.jsx` (botón
+"Importar pedido desde Excel o CSV" en el carrito, visible también con el carrito vacío).
+
+Capturar 141 renglones a mano en la UI es inviable y las refaccionarias ya tienen su lista en
+archivo. El modal la sube, el backend la valida contra el catálogo y **el usuario confirma**
+antes de que se toque el carrito (un archivo con errores nunca pisa un carrito bueno).
+
+Detección de columnas deliberadamente permisiva (los archivos del cliente no tienen formato fijo):
+- Busca encabezados por nombre: SKU/Clave/Código/Artículo/Parte y Cantidad/Cant/Qty/Piezas/Pzas.
+- Sin encabezado reconocible: **primera columna = SKU, segunda = cantidad**. Sin cantidad → 1.
+- CSV con separador `,`, `;`, tab o `|` (autodetectado); XLSX vía openpyxl; BOM de Excel manejado.
+- **SKUs normalizados igual que en el catálogo** (se quitan ceros iniciales si es numérico):
+  `013030102` del Excel hace match con `13030102` en BD.
+
+Nunca falla en bloque — devuelve `no_encontrados`, `sin_stock` y `ajustados` (cantidad bajada
+al inventario disponible) para que el usuario vea qué revisar y se quede con lo que sí sirve.
+Excepción: si **NADA** hace match devuelve 400 explicando que revise la columna de SKU (un
+"0 encontrados" con 200 no le dice al usuario si su archivo está mal o si sus SKUs no existen).
+Requiere `python-multipart` (ya en `requirements.txt`).
 
 ### Referencia Stripe ↔ proveedor
 - Cada orden en `pedidos.db` guarda el `username` del comprador (índice `idx_orders_username`).
@@ -905,13 +973,17 @@ Se activan por MARCA (CHECKER, EXTREMA, CAMEL), no por departamento.
 3. ~~**Exportación**: PDF/Excel de búsquedas~~ ✅ Implementado (Excel + PDF con imágenes embebidas)
 4. ~~**Usuarios**: Sistema de login para empleados~~ ✅ Implementado (JWT + usuarios de proveedores)
 5. ~~**Módulo de pedidos**: UI de admin sobre las órdenes~~ ✅ Implementado (portal 📋 + CSV)
-6. **Stripe a producción**: pasar de llaves test a live y reactivar el cobro en línea
+6. ~~**Carrito persistido**: que no se pierda al cerrar el navegador~~ ✅ Implementado
+   (tabla `carritos` en pedidos.db + vista de admin de carritos sin enviar)
+7. ~~**Importar pedido desde archivo**: capturar 100+ renglones a mano es inviable~~
+   ✅ Implementado (`ImportarPedido.jsx` + `POST /api/carrito/importar`)
+8. **Stripe a producción**: pasar de llaves test a live y reactivar el cobro en línea
    (cambiar `crearPedido` → `crearCheckout` en `CartDrawer.jsx`). ⚠️ Bloqueante para cobrar.
-7. **Estados de pedido editables**: que el admin marque un pedido como surtido/cancelado
+9. **Estados de pedido editables**: que el admin marque un pedido como surtido/cancelado
    desde el portal (hoy `estado` solo lo mueve el webhook de Stripe).
-8. **Notificación de pedido nuevo**: avisar al admin (correo/WhatsApp) cuando entra un pedido;
-   hoy hay que abrir el portal para enterarse.
-9. **Analytics**: Tracking de búsquedas más comunes
-10. **Búsqueda avanzada**: Autocompletado, sugerencias
-11. **Mejora de imágenes**: Solicitar a RELUVSA actualizar imágenes faltantes (~81%)
-12. **Tags de producto**: Categorización adicional por tags (pendiente recibir Excel del cliente)
+10. **Notificación de pedido nuevo**: avisar al admin (correo/WhatsApp) cuando entra un pedido;
+    hoy hay que abrir el portal para enterarse.
+11. **Analytics**: Tracking de búsquedas más comunes
+12. **Búsqueda avanzada**: Autocompletado, sugerencias
+13. **Mejora de imágenes**: Solicitar a RELUVSA actualizar imágenes faltantes (~81%)
+14. **Tags de producto**: Categorización adicional por tags (pendiente recibir Excel del cliente)
