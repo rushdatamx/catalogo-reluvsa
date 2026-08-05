@@ -4,7 +4,8 @@ Script de actualización de precios e inventario desde Excel (con IVA).
 Uso:
     python3 scripts/actualizar_precios_excel.py
 
-Lee data/limpieza-catalogo.xlsx, hoja "TODOS LOS PRODUCTOS ACTUALIZADO".
+Lee data/limpieza-catalogo.xlsx, hoja indicada por SHEET_NAME (cambia cada mes:
+el cliente nombra la hoja con el mes del corte, p. ej. "TODOS LOS PRODUCTOS AGOSTO").
 Actualiza:
 - precio_publico y precio_mayoreo con precios CON IVA
 - inventario_total y tabla inventario por sucursal
@@ -24,7 +25,7 @@ import openpyxl
 # Rutas
 DB_PATH = Path(__file__).parent.parent / "data" / "catalogo.db"
 EXCEL_PATH = Path(__file__).parent.parent.parent / "data" / "limpieza-catalogo.xlsx"
-SHEET_NAME = "TODOS LOS PRODUCTOS JULIO"
+SHEET_NAME = "TODOS LOS PRODUCTOS AGOSTO"
 
 # Columnas del Excel (formato Julio 2026 v2: 23 columnas — trae una columna
 # 'Descripcion' extra en la posición 1, duplicado exacto de la col 10, que
