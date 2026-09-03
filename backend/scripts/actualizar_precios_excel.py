@@ -24,8 +24,8 @@ import openpyxl
 
 # Rutas
 DB_PATH = Path(__file__).parent.parent / "data" / "catalogo.db"
-EXCEL_PATH = Path(__file__).parent.parent.parent / "data" / "limpieza-catalogo.xlsx"
-SHEET_NAME = "TODOS LOS PRODUCTOS 24 AGOSTO"
+EXCEL_PATH = Path(__file__).parent.parent.parent / "data" / "borrador-catalogo.xlsx"
+SHEET_NAME = "TODOS LOS PRODUCTOS 03 SEPTIEMB"
 
 # Columnas del Excel (formato Julio 2026 v2: 23 columnas — trae una columna
 # 'Descripcion' extra en la posición 1, duplicado exacto de la col 10, que
