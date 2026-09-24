@@ -25,7 +25,7 @@ import openpyxl
 # Rutas
 DB_PATH = Path(__file__).parent.parent / "data" / "catalogo.db"
 EXCEL_PATH = Path(__file__).parent.parent.parent / "data" / "borrador-catalogo.xlsx"
-SHEET_NAME = "TODOS LOS PRODUCTOS 10 SEPTIEMB"
+SHEET_NAME = "TODOS LOS PRODUCTOS 10 SEPTIEMB"  # legado; se valida y se autodetecta abajo
 
 # Columnas del Excel (formato Julio 2026 v2: 23 columnas — trae una columna
 # 'Descripcion' extra en la posición 1, duplicado exacto de la col 10, que
@@ -506,7 +506,23 @@ def actualizar_precios(db_path: str = None, excel_path: str = None):
     # Leer Excel
     print(f"\nLeyendo Excel: {excel_path}")
     wb = openpyxl.load_workbook(excel_path, read_only=True)
-    ws = wb[SHEET_NAME]
+    # El nombre de la hoja cambia con cada corte mensual. Preferir el nombre
+    # histórico si existe; en caso contrario localizar la hoja cuyo encabezado
+    # empieza con "Clave" y contiene las columnas esperadas del catálogo.
+    if SHEET_NAME in wb.sheetnames:
+        ws = wb[SHEET_NAME]
+    else:
+        ws = None
+        for candidata in wb.worksheets:
+            encabezados = next(candidata.iter_rows(min_row=1, max_row=1, values_only=True), ())
+            if len(encabezados) > COL_INVENTARIO_TOTAL and encabezados[COL_SKU] == 'Clave' and encabezados[COL_DESCRIPCION] == 'Descripcion':
+                ws = candidata
+                break
+        if ws is None:
+            print(f"ERROR: No se encontró una hoja de catálogo compatible. Hojas: {wb.sheetnames}")
+            wb.close()
+            return
+        print(f"Hoja detectada automáticamente: {ws.title}")
 
     # Construir diccionario SKU -> datos
     datos_excel = {}
